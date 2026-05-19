@@ -1,0 +1,186 @@
+/* Стилі масових дій */
+/* ==========================================================================
+   F.Int — Система обліку майна
+   Стилі для модуля масових дій (Bulk Operations) — Фаза 4
+   ========================================================================== */
+
+/* Корректировка глобального контейнера для предотвращения перекрытия UI 
+   панелью действий, закрепленной внизу экрана (Пункт 14 Чек-листа) */
+body,
+.main-content-container {
+    padding-bottom: 90px !important;
+}
+
+/* ==========================================================================
+   1. Модифікація таблиці активів (asset-table.js)
+   ========================================================================== */
+
+/* Фіксована колонка чекбоксів для запобігання зсуву (Пункт 14 Чек-листа) */
+.col-select {
+    width: 40px !important;
+    min-width: 40px !important;
+    max-width: 40px !important;
+    text-align: center;
+    vertical-align: middle;
+    padding: 0 !important;
+}
+
+/* Елементи керування вибором */
+.row-checkbox,
+#select-all {
+    cursor: pointer;
+    width: 16px;
+    height: 16px;
+    margin: 0 auto;
+    display: block;
+    accent-color: #2563eb;
+    /* Сучасний десатурований синій акцент */
+}
+
+/* Стан постійного блокування під час виконання пакетного запиту */
+.row-checkbox:disabled {
+    cursor: not-allowed;
+    opacity: 0.4;
+}
+
+/* ==========================================================================
+   2. Плаваюча панель дій (bulk-action-bar.js)
+   ========================================================================== */
+
+.bulk-action-bar {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+
+    /* Компонування елементів */
+    display: none;
+    /* Перемикається на 'flex' через JS при count > 0 */
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+
+    /* Геометрія та адаптивність під pywebview вікно */
+    width: calc(100% - 48px);
+    max-width: 850px;
+    padding: 14px 24px;
+
+    /* Візуальне оформлення (Матеріальний дизайн, десатуровані тони) */
+    background-color: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.1),
+        0 8px 10px -6px rgba(15, 23, 42, 0.05);
+
+    z-index: 9999;
+    /* Пріоритет поверх будь-яких модальних вікон таблиці */
+    transition: transform 0.2s ease-in-out, opacity 0.2s ease-in-out;
+}
+
+/* Інформаційне поле лічильника */
+.bulk-action-bar__info {
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    color: #1e293b;
+    white-space: nowrap;
+}
+
+/* Контейнер для кнопок управління */
+.bulk-action-bar__actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: nowrap;
+}
+
+/* Базовий клас інтерфейсних кнопок */
+.btn-bulk {
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 8px 16px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* Стан блокування під час виконання запиту до API (Пункт 14) */
+.btn-bulk:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background-color: #e2e8f0 !important;
+    color: #94a3b8 !important;
+    border-color: #e2e8f0 !important;
+    box-shadow: none !important;
+}
+
+/* Модифікатор: Переміщення (Основна дія) */
+.btn-bulk--move {
+    background-color: #2563eb;
+    color: #ffffff;
+}
+
+.btn-bulk--move:hover:not(:disabled) {
+    background-color: #1d4ed8;
+}
+
+/* Модифікатор: Списання (Деструктивна небезпечна дія, Пункт 12.1) */
+.btn-bulk--write-off {
+    background-color: #dc2626;
+    color: #ffffff;
+}
+
+.btn-bulk--write-off:hover:not(:disabled) {
+    background-color: #b91c1c;
+}
+
+.btn-bulk--write-off:focus {
+    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.4);
+}
+
+/* Модифікатор: Експорт документів (Нейтральна дія) */
+.btn-bulk--export {
+    background-color: #0f172a;
+    color: #ffffff;
+}
+
+.btn-bulk--export:hover:not(:disabled) {
+    background-color: #1e293b;
+}
+
+/* Модифікатор: Скидання виділення (Контурна кнопка) */
+.btn-bulk--reset {
+    background-color: #ffffff;
+    color: #475569;
+    border-color: #cbd5e1;
+}
+
+.btn-bulk--reset:hover:not(:disabled) {
+    background-color: #f8fafc;
+    border-color: #94a3b8;
+}
+
+/* ==========================================================================
+   3. Асинхронні індикатори (Spinner)
+   ========================================================================== */
+
+.bulk-spinner {
+    display: none;
+    /* Активується через JS метод setLoading(true) */
+    width: 16px;
+    height: 16px;
+    border: 2px solid #cbd5e1;
+    border-top-color: #2563eb;
+    border-radius: 50%;
+    animation: bulk-loader-spin 0.8s linear infinite;
+    margin-left: 8px;
+}
+
+@keyframes bulk-loader-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}

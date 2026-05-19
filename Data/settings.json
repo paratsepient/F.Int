@@ -1,0 +1,10 @@
+{
+    "theme": "System",
+    "scale": 100,
+    "font_size": 13,
+    "backup_on_close": true,
+    "backup_interval_minutes": 30,
+    "max_backups_to_keep": 20,
+    "export_dir": "C:\\Users\\maysternya2rota\\Documents\\GitHub\\F.Int\\Export",
+    "backup_dir": "C:\\Users\\maysternya2rota\\Documents\\GitHub\\F.Int\\Backups"
+}

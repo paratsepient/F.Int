@@ -1,0 +1,52 @@
+/* ==========================================================================
+   F.Int — Система обліку майна
+   Design Tokens (Глобальні змінні)
+   ========================================================================== */
+
+:root {
+    /* Palette: Primary (Blue) */
+    --color-primary: #2563eb;
+    --color-primary-hover: #1d4ed8;
+    
+    /* Palette: Danger (Red) - Використовується для списання */
+    --color-danger: #dc2626;
+    --color-danger-hover: #b91c1c;
+    --color-danger-focus: rgba(220, 38, 38, 0.4);
+
+    /* Palette: Neutral (Slate) */
+    --color-bg-main: #f8fafc;
+    --color-surface: #ffffff;
+    --color-border: #e2e8f0;
+    --color-border-dark: #cbd5e1;
+    --color-text-main: #1e293b;
+    --color-text-muted: #475569;
+    --color-text-disabled: #94a3b8;
+
+    /* Palette: Dark (Експорт) */
+    --color-dark: #0f172a;
+    --color-dark-hover: #1e293b;
+
+    /* Geometry & Spacing */
+    --spacing-xs: 4px;
+    --spacing-sm: 8px;
+    --spacing-md: 16px;
+    --spacing-lg: 24px;
+    
+    --radius-sm: 6px;
+    --radius-md: 12px;
+    
+    /* Typography */
+    --font-family-base: system-ui, -apple-system, sans-serif;
+    --font-size-sm: 13px;
+    --font-size-md: 14px;
+    
+    /* Shadows */
+    --shadow-floating: 0 10px 25px -5px rgba(15, 23, 42, 0.1), 0 8px 10px -6px rgba(15, 23, 42, 0.05);
+    
+    /* Z-Index */
+    --z-index-floating: 9999;
+    
+    /* Transitions */
+    --transition-fast: 0.15s ease;
+    --transition-normal: 0.2s ease-in-out;
+}
