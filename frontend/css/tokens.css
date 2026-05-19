@@ -1,52 +1,432 @@
 /* ==========================================================================
-   F.Int — Система обліку майна
-   Design Tokens (Глобальні змінні)
+   F.Int DESIGN SYSTEM TOKENS & APPLICATION LAYOUT
    ========================================================================== */
 
+/* --- СВІТЛА ТЕМА (Cream & Blue) — Працює за замовчуванням --- */
 :root {
-    /* Palette: Primary (Blue) */
-    --color-primary: #2563eb;
-    --color-primary-hover: #1d4ed8;
-    
-    /* Palette: Danger (Red) - Використовується для списання */
-    --color-danger: #dc2626;
-    --color-danger-hover: #b91c1c;
-    --color-danger-focus: rgba(220, 38, 38, 0.4);
-
-    /* Palette: Neutral (Slate) */
-    --color-bg-main: #f8fafc;
-    --color-surface: #ffffff;
+    --color-bg-main: #fcfcfc;
+    /* Кремово-білий фон робочої зони */
+    --color-bg-sidebar: #f0f4f8;
+    /* Легкий блакитнувато-сірий для меню */
     --color-border: #e2e8f0;
-    --color-border-dark: #cbd5e1;
-    --color-text-main: #1e293b;
-    --color-text-muted: #475569;
-    --color-text-disabled: #94a3b8;
+    /* М'які світлі межі */
 
-    /* Palette: Dark (Експорт) */
-    --color-dark: #0f172a;
-    --color-dark-hover: #1e293b;
+    /* Текст */
+    --color-text-main: #0f172a;
+    /* Темно-синій для максимальної читабельності */
+    --color-text-muted: #64748b;
+    /* Сіро-блакитний для підказок та підзаголовків */
 
-    /* Geometry & Spacing */
-    --spacing-xs: 4px;
-    --spacing-sm: 8px;
-    --spacing-md: 16px;
-    --spacing-lg: 24px;
-    
-    --radius-sm: 6px;
-    --radius-md: 12px;
-    
-    /* Typography */
-    --font-family-base: system-ui, -apple-system, sans-serif;
-    --font-size-sm: 13px;
-    --font-size-md: 14px;
-    
-    /* Shadows */
-    --shadow-floating: 0 10px 25px -5px rgba(15, 23, 42, 0.1), 0 8px 10px -6px rgba(15, 23, 42, 0.05);
-    
-    /* Z-Index */
-    --z-index-floating: 9999;
-    
-    /* Transitions */
-    --transition-fast: 0.15s ease;
-    --transition-normal: 0.2s ease-in-out;
+    /* Акценти та стани */
+    --color-accent: #0ea5e9;
+    /* Насичений блакитний (Sky Blue) */
+    --color-accent-subtle: rgba(14, 165, 233, 0.1);
+    /* Фон для активної вкладки */
+    --color-hover: #e2e8f0;
+    /* Стан наведення в меню */
+
+    --color-danger: #ef4444;
+    /* Червоний для кнопок деструктивних дій */
+    --color-danger-hover: #dc2626;
+
+    /* Геометрія та Шрифти */
+    --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+    --sidebar-width: 260px;
+}
+
+/* --- ТЕМНА ТЕМА (Dark Gray & Gold) — Вмикається через [data-theme="dark"] --- */
+[data-theme="dark"] {
+    --color-bg-main: #18181b;
+    /* Глибокий темно-сірий (Zinc-900) */
+    --color-bg-sidebar: #27272a;
+    /* Трохи світліший для сайдбару (Zinc-800) */
+    --color-border: #3f3f46;
+    /* Акуратні темні межі */
+
+    /* Текст */
+    --color-text-main: #ffffff;
+    /* Чистий білий текст */
+    --color-text-muted: #a1a1aa;
+    /* Світло-сірий для описових блоків */
+
+    /* Акценти та стани */
+    --color-accent: #d4af37;
+    /* Преміальний золотий */
+    --color-accent-subtle: rgba(212, 175, 55, 0.15);
+    /* Золоте підсвічування active елементів */
+    --color-hover: #3f3f46;
+    /* Наведення на кнопки в темній темі */
+}
+
+/* --- БАЗОВЕ СКИДАННЯ СТИЛІВ --- */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: var(--font-sans);
+    background-color: var(--color-bg-main);
+    color: var(--color-text-main);
+    min-width: 900px;
+    min-height: 600px;
+    overflow: hidden;
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* --- ГЛОБАЛЬНА ГЕОМЕТРІЯ SPA ШЕЛЛУ --- */
+.app-layout {
+    display: flex;
+    width: 100vw;
+    height: 100vh;
+    background-color: var(--color-bg-main);
+}
+
+.main-content {
+    flex: 1;
+    height: 100vh;
+    overflow-y: auto;
+    padding: 32px;
+    background-color: var(--color-bg-main);
+    transition: background-color 0.3s ease;
+}
+
+#view-container {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.view-header h1 {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--color-text-main);
+    margin-bottom: 4px;
+}
+
+.text-muted {
+    font-size: 14px;
+    color: var(--color-text-muted);
+}
+
+/* --- КОМПОНЕНТ: НАВІГАЦІЙНИЙ САЙДБАР --- */
+.sidebar {
+    width: var(--sidebar-width);
+    height: 100vh;
+    background-color: var(--color-bg-sidebar);
+    border-right: 1px solid var(--color-border);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    z-index: 100;
+    transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+
+.sidebar-header {
+    padding: 24px;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.logo-text {
+    font-size: 24px;
+    font-weight: 800;
+    letter-spacing: -0.05em;
+    color: var(--color-text-main);
+    background: linear-gradient(to right, var(--color-text-main), var(--color-accent));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.logo-version {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-text-muted);
+}
+
+.sidebar-nav {
+    padding: 16px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex-grow: 1;
+}
+
+.nav-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    color: var(--color-text-main);
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 500;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+}
+
+.nav-item:hover {
+    background-color: var(--color-hover);
+}
+
+.nav-item.active {
+    color: var(--color-accent);
+    background-color: var(--color-accent-subtle);
+    font-weight: 600;
+}
+
+.nav-icon {
+    font-size: 16px;
+}
+
+.sidebar-footer {
+    padding: 16px;
+    border-top: 1px solid var(--color-border);
+}
+
+/* --- УНІФІКОВАНІ СИСТЕМНІ КНОПКИ --- */
+.btn-save-close {
+    width: 100%;
+    background-color: var(--color-bg-main);
+    border: 1px solid var(--color-border);
+    color: var(--color-text-main);
+    padding: 10px 16px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: all 0.2s ease;
+    outline: none;
+}
+
+.btn-save-close:hover {
+    border-color: var(--color-accent);
+    background-color: var(--color-accent-subtle);
+}
+
+.btn-save-close:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* --- КОМПОНЕНТ: ПАНЕЛЬ ФІЛЬТРІВ (ОБЛІК МАЙНА) --- */
+.filter-panel-card {
+    transition: background-color 0.3s, border-color 0.3s;
+}
+
+/* --- КОМПОНЕНТ: ГЕНЕРАТОР ДОКУМЕНТІВ --- */
+.document-editor-container {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    height: 100%;
+    animation: fadeIn 0.2s ease-in-out;
+}
+
+.document-grid {
+    display: flex;
+    gap: 24px;
+    flex-grow: 1;
+    align-items: stretch;
+}
+
+.doc-config-sidebar {
+    width: 320px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    flex-shrink: 0;
+}
+
+.config-card {
+    background-color: var(--color-bg-sidebar);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.config-card h3 {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-muted);
+}
+
+.template-selector {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.template-option {
+    display: block;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    padding: 12px;
+    cursor: pointer;
+    background-color: var(--color-bg-main);
+    transition: all 0.2s ease;
+}
+
+.template-option input {
+    display: none;
+}
+
+.template-option.active {
+    border-color: var(--color-accent);
+    background-color: var(--color-accent-subtle);
+    box-shadow: 0 0 0 1px var(--color-accent);
+}
+
+.opt-meta {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+}
+
+.opt-icon {
+    font-size: 20px;
+}
+
+.opt-meta h4 {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 2px;
+    color: var(--color-text-main);
+}
+
+.opt-meta p {
+    font-size: 12px;
+    color: var(--color-text-muted);
+    line-height: 1.3;
+}
+
+.attached-status {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    background-color: var(--color-bg-main);
+    padding: 12px;
+    border-radius: 6px;
+    border: 1px dashed var(--color-border);
+}
+
+.attach-count-icon {
+    font-size: 24px;
+}
+
+.attach-title {
+    font-size: 12px;
+    color: var(--color-text-muted);
+}
+
+.doc-editor-workspace {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.editor-paper {
+    background-color: var(--color-bg-sidebar);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    height: 100%;
+}
+
+.field-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.field-group label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-text-muted);
+}
+
+.doc-title-input {
+    background-color: var(--color-bg-main);
+    border: 1px solid var(--color-border);
+    color: var(--color-text-main);
+    padding: 12px 14px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    width: 100%;
+    outline: none;
+    font-family: var(--font-sans);
+    transition: border-color 0.2s;
+}
+
+.doc-title-input:focus {
+    border-color: var(--color-accent);
+}
+
+.doc-content-textarea {
+    background-color: var(--color-bg-main);
+    border: 1px solid var(--color-border);
+    color: var(--color-text-main);
+    padding: 14px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-family: monospace;
+    line-height: 1.5;
+    resize: none;
+    width: 100%;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.doc-content-textarea:focus {
+    border-color: var(--color-accent);
+}
+
+.editor-footer-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    border-top: 1px solid var(--color-border);
+    padding-top: 16px;
+}
+
+/* --- АНІМАЦІЇ ПЕРЕХОДІВ В SPA --- */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.loading-placeholder,
+.error-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--color-text-muted);
+    font-size: 14px;
+    font-style: italic;
 }

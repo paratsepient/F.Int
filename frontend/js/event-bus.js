@@ -1,78 +1,84 @@
 /**
- * Патерн Publisher/Subscriber (Event Bus).
- * Забезпечує слабку зв'язність (loose coupling) між Vanilla JS компонентами.
+ * F.Int — Глобальна шина подій (EventBus)
+ * Реалізує патерн Pub/Sub для ізольованого спілкування компонентів.
+ * Оновлено під специфікацію APP MAP v1.1.
  */
-class EventBusSystem {
-    constructor() {
-        this.listeners = {};
 
-        // Реєстр дозволених подій для суворої типізації (уникнення помилок в іменах)
-        // Включає як існуючі, так і нові події з Фази 4.
-        this.ALLOWED_EVENTS = new Set([
-            'filters:changed', // Зміна фільтрів
-            'asset:updated',   // Одиночне редагування
-            'assets:selected', // Вибір чекбоксів (Фаза 4)
-            'bulk:completed'   // Завершення масової дії (Фаза 4)
-        ]);
-    }
+const EventBus = {
+    // Реєстр суворо дозволених подій системи згідно з архітектурним планом v1.1
+    _allowedEvents: new Set([
+        'filters:changed',   // Зміна фільтрів у панелі
+        'asset-table:ready', // Таблиця успішно відрендерена
+        'asset:updated',      // Оновлення картки об'єкта
+        'asset:added',        // Додавання нової позиції
+        'assets:selected',    // Виділення рядків чекбоксами (для BulkActionBar)
+        'bulk:completed',     // Масова операція завершена
+        'document:saved',     // Збереження чернетки або акта
+        'settings:changed',   // Зміна масштабу / теми / шрифту
+        'backup:created',     // Створення фонової резервної копії
+        'route:changed'       // [ДОДАНО] Перемикання екранів у боковому меню
+    ]),
+
+    _listeners: {},
 
     /**
-     * Підписка на подію.
-     * @param {string} event - Назва події.
-     * @param {Function} callback - Функція-обробник.
+     * Підписка на подію (Слухач)
      */
     on(event, callback) {
-        if (!this.ALLOWED_EVENTS.has(event)) {
+        if (!this._allowedEvents.has(event)) {
             console.warn(`[EventBus] Підписка на незареєстровану подію: ${event}`);
+            return;
         }
 
-        if (!this.listeners[event]) {
-            this.listeners[event] = [];
+        if (!this._listeners[event]) {
+            this._listeners[event] = [];
         }
-        this.listeners[event].push(callback);
-    }
+        this._listeners[event].push(callback);
+    },
 
     /**
-     * Відписка від події.
-     * @param {string} event - Назва події.
-     * @param {Function} callback - Функція-обробник, яку потрібно видалити.
+     * Альтернативний метод для сумісності (subscribe)
      */
-    off(event, callback) {
-        if (!this.listeners[event]) return;
-        this.listeners[event] = this.listeners[event].filter(cb => cb !== callback);
-    }
+    subscribe(event, callback) {
+        this.on(event, callback);
+    },
 
     /**
-     * Публікація події.
-     * @param {string} event - Назва події.
-     * @param {Object} payload - Дані для передачі підписникам.
+     * Публікація події (Тригер)
      */
-    emit(event, payload) {
-        if (!this.ALLOWED_EVENTS.has(event)) {
-            console.warn(`[EventBus] Публікація незареєстрованої події: ${event}`);
+    emit(event, data) {
+        if (!this._allowedEvents.has(event)) {
+            console.error(`[EventBus] Блокування публікації незареєстрованої події: ${event}`);
+            return;
         }
 
-        if (!this.listeners[event] || this.listeners[event].length === 0) {
-            return; // Немає підписників — ігноруємо
-        }
+        if (!this._listeners[event]) return;
 
-        // Синхронний виклик підписників із захистом від падіння всього ланцюга
-        this.listeners[event].forEach(callback => {
+        // Виклик усіх зареєстрованих слухачів
+        this._listeners[event].forEach(callback => {
             try {
-                callback(payload);
-            } catch (error) {
-                console.error(`[EventBus] Помилка в обробнику події '${event}':`, error);
+                callback(data);
+            } catch (err) {
+                console.error(`[EventBus] Помилка виконання слухача для події ${event}:`, err);
             }
         });
-    }
+    },
 
     /**
-     * Очищення всіх підписників (для тестів або скидання стану).
+     * Альтернативний метод для сумісності (publish)
      */
-    clearAll() {
-        this.listeners = {};
-    }
-}
+    publish(event, data) {
+        this.emit(event, data);
+    },
 
-// Експорт глобального синглтону для середовища Vanilla JS
-window.EventBus = new EventBusSystem();
+    /**
+     * Відписка від події (Очищення пам'яті)
+     */
+    off(event, callback) {
+        if (!this._listeners[event]) return;
+        this._listeners[event] = this._listeners[event].filter(cb => cb !== callback);
+    }
+};
+
+// Експортуємо у глобальну область видимості браузера Chromium
+window.EventBus = EventBus;

@@ -3,102 +3,65 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>F.Int Client App</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>F.Int — Система обліку майна</title>
 
-    <link rel="icon" href="data:;base64,iVBORw0KGgo=">
+    <link rel="icon"
+        href="data:image/x-icon;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==">
 
-    <link rel="stylesheet" href="./css/tokens.css">
-    <link rel="stylesheet" href="./css/bulk-actions.css">
-
-    <style>
-        body {
-            font-family: var(--font-family-base, system-ui, sans-serif);
-            background-color: var(--color-bg-main, #f8fafc);
-            color: var(--color-text-main, #1e293b);
-            margin: 20px;
-        }
-
-        .table-container {
-            background: var(--color-surface, #ffffff);
-            border: 1px solid var(--color-border, #e2e8f0);
-            border-radius: var(--radius-md, 12px);
-            padding: var(--spacing-md, 16px);
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: var(--font-size-md, 14px);
-        }
-
-        th,
-        td {
-            padding: 12px;
-            text-align: left;
-            border-bottom: 1px solid var(--color-border, #e2e8f0);
-        }
-
-        th {
-            background-color: var(--color-bg-main, #f8fafc);
-            color: var(--color-text-muted, #475569);
-            font-weight: 600;
-        }
-    </style>
+    <link rel="stylesheet" href="css/tokens.css">
+    <link rel="stylesheet" href="css/bulk-actions.css">
 </head>
 
 <body>
 
-    <h2>Управління майном: Масові операції (V1.1)</h2>
-    <p>Виділіть позиції чекбоксами для активації плаваючої панелі дій.</p>
+    <div class="app-layout">
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <span class="logo-text">F.Int</span>
+                <span class="logo-version">v1.1</span>
+            </div>
 
-    <div class="table-container">
-        <table id="assets-table-element">
-            <thead id="table-head"></thead>
-            <tbody id="table-body"></tbody>
-        </table>
+            <nav class="sidebar-nav">
+                <a href="#asset-table" class="nav-item active" data-target="asset-table">
+                    <span class="nav-icon">📊</span> Облік майна
+                </a>
+                <a href="#documents" class="nav-item" data-target="documents">
+                    <span class="nav-icon">📁</span> Документи
+                </a>
+                <a href="#accounting-plus" class="nav-item" data-target="accounting-plus">
+                    <span class="nav-icon">➕</span> Облік+
+                </a>
+                <a href="#settings" class="nav-item" data-target="settings">
+                    <span class="nav-icon">⚙️</span> Налаштування
+                </a>
+            </nav>
+
+            <div class="sidebar-footer">
+                <button id="btn-save-close" class="btn-save-close">
+                    💾 Зберегти та закрити
+                </button>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            <div id="view-container">
+                <div class="loading-placeholder">Ініціалізація інтерфейсу...</div>
+            </div>
+        </main>
     </div>
 
-    <script src="./js/event-bus.js"></script>
-    <script src="./js/api-bridge.js"></script>
-    <script src="./js/components/asset-table.js"></script>
-    <script src="./js/components/bulk-action-bar.js"></script>
+    <script src="js/event-bus.js"></script>
+    <script src="js/api-bridge.js"></script>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            const mockColumns = [
-                { label: "Найменування" },
-                { label: "МВО" },
-                { label: "Об'єкт" },
-                { label: "Кількість" },
-                { label: "Вибуття" }
-            ];
+    <script src="js/components/filter-panel.js"></script>
+    <script src="js/components/asset-table.js"></script>
+    <script src="js/components/bulk-action-bar.js"></script>
+    <script src="js/components/document-editor.js"></script>
+    <script src="js/components/archive-panel.js"></script>
+    <script src="js/components/settings.js"></script>
 
-            const mockAssets = [
-                { uuid: "uuid-001", label: "Стілець ISO", mvo: "Іванов І.І.", obj: "Кімната 101", qty: 1, off: "" },
-                { uuid: "uuid-002", label: "Стілець ISO", mvo: "Іванов І.І.", obj: "Кімната 101", qty: 1, off: "" },
-                { uuid: "uuid-003", label: "Стілець ISO", mvo: "Петров П.П.", obj: "Кімната 102", qty: 1, off: "" },
-                { uuid: "uuid-004", label: "Стілець ISO", mvo: "Петров П.П.", obj: "Кімната 102", qty: 1, off: "" }
-            ];
-
-            const thead = document.getElementById('table-head');
-            const tbody = document.getElementById('table-body');
-
-            thead.appendChild(buildHeaderRow(mockColumns));
-
-            mockAssets.forEach(asset => {
-                const tr = buildDataRow(asset);
-                tr.innerHTML += `
-                    <td>${asset.label}</td>
-                    <td>${asset.mvo}</td>
-                    <td>${asset.obj}</td>
-                    <td>${asset.qty}</td>
-                    <td>${asset.off}</td>
-                `;
-                tbody.appendChild(tr);
-            });
-        });
-    </script>
+    <script src="js/app.js"></script>
 </body>
 
 </html>
