@@ -1,95 +1,99 @@
 import logging
-import tempfile
+from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
-import pandas as pd
+from typing import Any, Dict, List
 
-logger = logging.getLogger(__name__)
+import openpyxl
+from openpyxl.cell.cell import Cell  # ← один імпорт вгорі
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
+
+logger = logging.getLogger("F.Int.ExcelExporter")
+
+
+def _set_cell(ws, row: int, col: int, value=None, **styles) -> None:
+    """Встановлює значення та стилі тільки для справжніх Cell (не MergedCell)."""
+    cell = ws.cell(row=row, column=col)
+    if not isinstance(cell, Cell):  # MergedCell — пропускаємо
+        return
+    if value is not None:
+        cell.value = value
+    for attr, val in styles.items():
+        setattr(cell, attr, val)
+
 
 class ExcelExporter:
-    def __init__(self, archive_dir: str | Path = "F.Int/Archive"):
-        """
-        Ініціалізує підсистему генерації звітів та архівування документів.
-        """
-        self.archive_dir = Path(archive_dir)
-        self.archive_dir.mkdir(parents=True, exist_ok=True)
+    def __init__(self, archive_dir: Path, data_manager: Any):
+        self.archive_dir = archive_dir
+        self.data_manager = data_manager
+        self.archive_dir.mkdir(exist_ok=True)
 
-    def generate_move_act(
-        self, uuids: List[str], new_mvo: str, new_object: str, save_to_archive: bool
-    ) -> Optional[str]:
-        """
-        Генерує 'Накладну на переміщення' в форматі Excel.
-        """
+    def generate_document(
+        self, uuids: List[str], payload: Dict[str, Any], mode: str
+    ) -> Dict[str, Any]:
         try:
-            file_name = f"Накладна_Переміщення_{new_mvo.replace(' ', '_')}.xlsx"
-            
-            if save_to_archive:
-                target_path = self.archive_dir / file_name
-            else:
-                target_path = Path(tempfile.gettempdir()) / file_name
-            
-            summary_df = pd.DataFrame({
-                "UUID": uuids,
-                "Статус": ["Переміщено"] * len(uuids),
-                "Новий МВО": [new_mvo] * len(uuids),
-                "Новий Об'єкт": [new_object] * len(uuids)
-            })
-            
-            summary_df.to_excel(target_path, index=False, engine='openpyxl')
-            logger.info(f"Документ переміщення створено: {target_path}")
-            return str(target_path.resolve())
-        except Exception as e:
-            logger.error(f"Помилка генерації документа переміщення: {e}")
-            return None
+            all_assets = self.data_manager.get_all_assets()
+            selected_assets = [a for a in all_assets if str(a.get("UUID")) in uuids]
 
-    def generate_write_off_act(
-        self, uuids: List[str], reason: str, date: str, save_to_archive: bool
-    ) -> Optional[str]:
-        """
-        Генерує 'Акт списання' активів.
-        """
-        try:
-            file_name = f"Акт_Списання_{date}.xlsx"
-            
-            if save_to_archive:
-                target_path = self.archive_dir / file_name
-            else:
-                target_path = Path(tempfile.gettempdir()) / file_name
-            
-            summary_df = pd.DataFrame({
-                "UUID": uuids,
-                "Статус": ["Списано (Кількість=0)"] * len(uuids),
-                "Причина": [reason] * len(uuids),
-                "Дата акту": [date] * len(uuids)
-            })
-            
-            summary_df.to_excel(target_path, index=False, engine='openpyxl')
-            logger.info(f"Документ списання створено: {target_path}")
-            return str(target_path.resolve())
-        except Exception as e:
-            logger.error(f"Помилка генерації документа списання: {e}")
-            return None
+            if not selected_assets:
+                return {"success": False, "error": "Не знайдено майна для експорту."}
 
-    def export_selection(self, uuids: List[str], fmt: str) -> Optional[str]:
-        """
-        Виконує прямий експорт виділених позицій без фіксації в базі даних та архіві.
-        """
-        try:
-            file_name = f"Експорт_Виділеного_{len(uuids)}_позицій.{fmt}"
-            temp_path = Path(tempfile.gettempdir()) / file_name
-            
-            export_df = pd.DataFrame({
-                "UUID": uuids, 
-                "Тип Експорту": [fmt.upper()] * len(uuids)
-            })
-            
-            if fmt == "xlsx":
-                export_df.to_excel(temp_path, index=False, engine='openpyxl')
-            else:
-                temp_path.write_text(export_df.to_string(), encoding='utf-8')
-                
-            logger.info(f"Експортний файл сформовано: {temp_path}")
-            return str(temp_path.resolve())
+            title = payload.get(
+                "title", f"Документ_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            )
+            filename = f"{title.replace(' ', '_')}.xlsx"
+            file_path = self.archive_dir / filename
+
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            if ws is None:
+                return {"success": False, "error": "Не вдалося створити аркуш Excel."}
+            ws.title = "Акт"
+
+            header_font = Font(bold=True, color="FFFFFF")
+            header_fill = PatternFill(
+                start_color="1F4E78", end_color="1F4E78", fill_type="solid"
+            )
+            thin_border = Border(
+                left=Side(style="thin"),
+                right=Side(style="thin"),
+                top=Side(style="thin"),
+                bottom=Side(style="thin"),
+            )
+
+            # Заголовки
+            headers = ["Тип", "Найменування", "Інв. №", "Об'єкт", "МВО"]
+            for col_num, header in enumerate(headers, 1):
+                _set_cell(
+                    ws,
+                    1,
+                    col_num,
+                    value=str(header),
+                    font=header_font,
+                    fill=header_fill,
+                    alignment=Alignment(horizontal="center"),
+                )
+
+            # Дані
+            for row_idx, asset in enumerate(selected_assets, 2):
+                values = [
+                    str(asset.get("Тип", "") or ""),
+                    str(asset.get("Найменування", "") or ""),
+                    str(asset.get("Інв. / Номенкл. №", "") or ""),
+                    str(asset.get("Об'єкт", "") or ""),
+                    str(asset.get("МВО (Прізвище)", "") or ""),
+                ]
+                for col_idx, val in enumerate(values, 1):
+                    _set_cell(ws, row_idx, col_idx, value=val, border=thin_border)
+
+            # Автоширина
+            for col in range(1, 6):
+                ws.column_dimensions[get_column_letter(col)].width = 20
+
+            wb.save(file_path)
+            logger.info(f"Документ згенеровано: {file_path}")
+            return {"success": True, "filename": filename}
+
         except Exception as e:
-            logger.error(f"Помилка експорту виділення: {e}")
-            return None
+            logger.error(f"Помилка генерації Excel: {e}")
+            return {"success": False, "error": str(e)}

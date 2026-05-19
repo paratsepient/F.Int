@@ -1,90 +1,117 @@
+import json
 import logging
-from typing import List, Dict, Any, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
+import webview
+
+# Налаштування логера для API-шлюзу
+logger = logging.getLogger("F.Int.API")
+
 
 class Api:
-    def __init__(self, data_manager, excel_exporter):
-        # ВИПРАВЛЕНО: Робимо інстанси приватними (з _), щоб pywebview 
-        # не намагався рекурсивно серіалізувати pandas DataFrame у JS.
-        self._data_manager = data_manager
-        self._excel_exporter = excel_exporter
+    """
+    Головний шлюз зв'язку між фронтендом (Vanilla JS) та бекендом (Python).
+    Усі методи цього класу автоматично публікуються у window.pywebview.api.
+    """
+
+    def __init__(self, data_manager: Any, excel_exporter: Any) -> None:
+        self.data_manager = data_manager
+        self.excel_exporter = excel_exporter
+        self._window: Optional[webview.Window] = None
+
+    def set_window(self, window: webview.Window) -> None:
+        """Зберігає посилання на графічне вікно для керування його життєвим циклом."""
+        self._window = window
+
+    def get_assets(self) -> List[Dict[str, Any]]:
+        """
+        Віддає фронтенду масив активів для рендерингу в AssetTable.
+        Повертає список словників (рядків з Excel-бази).
+        """
+        logger.info("Отримано запит get_assets() від інтерфейсу.")
+        try:
+            # Цей метод ми реалізуємо на наступному кроці у data_manager.py
+            return self.data_manager.get_all_assets()
+        except Exception as e:
+            logger.error(f"Помилка отримання майна з бази: {e}")
+            return []
 
     def bulk_action(
         self, uuids: List[str], action_type: str, mode: str, payload: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        Єдина точка входу для всіх масових операцій застосунку.
+        Єдина точка входу для всіх операцій з даними.
+        Використовує сучасний синтаксис match/case для безпечної маршрутизації запитів.
         """
-        if not uuids:
-            return {
-                "success": False, "processed": [], "failed": [], 
-                "doc_path": None, "error": "Список UUID порожній"
-            }
+        logger.info(
+            f"Ініційовано транзакцію | Тип: {action_type} | Режим: {mode} | Позицій: {len(uuids)}"
+        )
 
         try:
             match action_type:
+                case "edit":
+                    # Редагування однієї картки майна з модального вікна
+                    if not uuids:
+                        return {
+                            "success": False,
+                            "error": "Не передано UUID для редагування.",
+                        }
+                    return self.data_manager.edit_asset(uuids[0], payload, mode)
+
                 case "move":
-                    return self._bulk_move(uuids, mode, payload)
+                    # Масове або одиничне переміщення/зміна МВО
+                    return self.data_manager.bulk_move(uuids, payload, mode)
+
                 case "write_off":
-                    return self._bulk_write_off(uuids, mode, payload)
+                    # Масове або одиничне списання
+                    return self.data_manager.bulk_write_off(uuids, payload, mode)
+
                 case "export":
-                    return self._bulk_export(uuids, payload)
+                    # Системний хук: збереження налаштувань користувача з вкладки "Налаштування"
+                    if "SYSTEM_CONFIG" in uuids:
+                        return self._save_system_config(payload)
+
+                    # Генерація актів та інвентаризаційних описів у вкладці "Документи"
+                    return self.excel_exporter.generate_document(uuids, payload, mode)
+
                 case _:
+                    logger.warning(
+                        f"Відхилено: Невідомий тип операції '{action_type}'."
+                    )
                     return {
-                        "success": False, "processed": [], "failed": uuids,
-                        "doc_path": None, "error": f"Невідомий action_type: {action_type}"
+                        "success": False,
+                        "error": f"Невідомий action_type: {action_type}",
                     }
+
         except Exception as e:
-            logger.exception("bulk_action failed")
-            return {
-                "success": False, "processed": [], "failed": uuids,
-                "doc_path": None, "error": str(e)
-            }
-
-    def _bulk_move(self, uuids: List[str], mode: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-        new_mvo = payload.get("new_mvo", "").strip()
-        new_object = payload.get("new_object", "").strip()
-
-        if not new_mvo:
-            return {
-                "success": False, "processed": [], "failed": uuids,
-                "doc_path": None, "error": "new_mvo не вказано"
-            }
-
-        processed, failed = self._data_manager.bulk_move(uuids, new_mvo, new_object)
-        doc_path: Optional[str] = None
-
-        if mode in ("save", "commit") and processed:
-            doc_path = self._excel_exporter.generate_move_act(
-                uuids=processed, new_mvo=new_mvo, new_object=new_object,
-                save_to_archive=(mode == "commit")
+            logger.error(
+                f"Критичний збій під час виконання {action_type}: {e}", exc_info=True
             )
+            return {"success": False, "error": str(e)}
 
-        return {"success": True, "processed": processed, "failed": failed, "doc_path": doc_path}
+    def _save_system_config(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Зберігає налаштування теми та масштабу у файл Data/settings.json"""
+        try:
+            data_dir = Path("Data")
+            data_dir.mkdir(exist_ok=True)
+            config_path = data_dir / "settings.json"
 
-    def _bulk_write_off(self, uuids: List[str], mode: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-        reason = payload.get("reason", "").strip()
-        date = payload.get("date", "").strip()
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=4)
 
-        if not reason:
-            return {
-                "success": False, "processed": [], "failed": uuids,
-                "doc_path": None, "error": "reason не вказано"
-            }
+            logger.info("Системні налаштування успішно зафіксовано.")
+            return {"success": True}
+        except Exception as e:
+            logger.error(f"Помилка запису settings.json: {e}")
+            return {"success": False, "error": str(e)}
 
-        processed, failed = self._data_manager.bulk_write_off(uuids, reason, date)
-        doc_path: Optional[str] = None
-
-        if mode in ("save", "commit") and processed:
-            doc_path = self._excel_exporter.generate_write_off_act(
-                uuids=processed, reason=reason, date=date,
-                save_to_archive=(mode == "commit")
-            )
-
-        return {"success": True, "processed": processed, "failed": failed, "doc_path": doc_path}
-
-    def _bulk_export(self, uuids: List[str], payload: Dict[str, Any]) -> Dict[str, Any]:
-        fmt = payload.get("format", "xlsx")
-        doc_path = self._excel_exporter.export_selection(uuids=uuids, fmt=fmt)
-        return {"success": True, "processed": uuids, "failed": [], "doc_path": doc_path}
+    def close_application(self) -> None:
+        """
+        Нативний виклик із JS.
+        Знищує вікно, що автоматично тригерить подію 'closed' у main.py
+        для дефенсивного збереження бази і миттєвого виходу.
+        """
+        logger.info("Отримано команду close_application() від інтерфейсу.")
+        if self._window:
+            self._window.destroy()

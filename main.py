@@ -122,7 +122,9 @@ def main() -> None:
 
     # Ініціалізація інфраструктури бекенду
     _data_manager_instance = DataManager(db_path=db_file)
-    excel_exporter = ExcelExporter(archive_dir=root_dir / "Archive")
+    excel_exporter = ExcelExporter(
+        archive_dir=root_dir / "Archive", data_manager=_data_manager_instance
+    )
 
     # Створення об'єкта API, який експортується у JavaScript
     api_instance = Api(
