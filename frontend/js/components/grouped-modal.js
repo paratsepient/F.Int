@@ -82,7 +82,7 @@ const GroupedModal = {
                 <div class="grouped-asset-block" data-uuid="${item["UUID"]}" style="background-color: var(--color-bg-sidebar); border: 1px solid var(--color-border); border-radius: 8px; padding: 18px; display: flex; flex-direction: column; gap: 12px;">
                     <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--color-border); padding-bottom: 8px;">
                         <span style="font-size: 12px; font-weight: 700; color: var(--color-accent);">ГРАФА #${idx + 1}</span>
-                        <span style="font-size: 11px; color: var(--color-text-muted); font-family: monospace;">ID: ${item["UUID"] ? item["UUID"].split('-')[0] : '—'}...</span>
+                        <span style="font-size: 11px; color: var(--color-text-muted); font-family: monospace;">ID: ${item["UUID"] ? String(item["UUID"]).split('-')[0] : '—'}...</span>
                     </div>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top:10px;">
             `;
@@ -126,8 +126,19 @@ const GroupedModal = {
         btnSave.disabled = true;
         btnSave.innerText = '⏳ Збереження граф...';
 
+        // Універсальний пошук методу API (з підтримкою нового ApiBridge)
+        let bulkMethod = null;
+        if (window.ApiBridge && typeof window.ApiBridge.bulkAction === 'function') {
+            bulkMethod = window.ApiBridge.bulkAction;
+        } else if (window.pywebview && window.pywebview.api) {
+            bulkMethod = window.pywebview.api.bulkAction;
+        } else if (window.Api && typeof window.Api.bulkAction === 'function') {
+            bulkMethod = window.Api.bulkAction;
+        }
+
         blocks.forEach(block => {
-            const uuid = block.dataset.uuid;
+            // Гарантуємо, що UUID передається як рядок для коректного збереження
+            const uuid = String(block.dataset.uuid);
             const payload = {};
 
             // Динамічно зчитуємо значення зі всіх інпутів
@@ -140,20 +151,23 @@ const GroupedModal = {
                 payload[key] = val;
             });
 
-            if (window.Api && typeof window.Api.bulkAction === 'function') {
+            if (bulkMethod) {
                 promises.push(
-                    window.Api.bulkAction({
+                    bulkMethod({
                         uuids: [uuid],
                         actionType: 'edit',
                         mode: 'save',
                         payload: payload
-                    }).then(function () {
+                    }).then(function (res) {
+                        // Оновлюємо дані локально, порівнюючи UUID як рядки!
                         if (window.AssetTable && window.AssetTable._data) {
-                            const match = window.AssetTable._data.find(a => a["UUID"] === uuid);
+                            const match = window.AssetTable._data.find(a => String(a["UUID"]) === uuid);
                             if (match) Object.assign(match, payload);
                         }
                     })
                 );
+            } else {
+                console.error("[GroupedModal] Не знайдено метод для збереження майна.");
             }
         });
 

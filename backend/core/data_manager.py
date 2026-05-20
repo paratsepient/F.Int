@@ -49,7 +49,6 @@ class DataManager:
         logger.warning("⚠️ Жодного файлу не знайдено. Ініціалізація порожнього реєстру.")
         self._df = pd.DataFrame(
             columns=[
-                "UUID",
                 "Тип",
                 "Найменування",
                 "Інв. / Номенкл. №",
@@ -94,7 +93,6 @@ class DataManager:
                 )
             except Exception as e:
                 logger.error(f"Критична помилка фінального коміту в Excel: {e}")
-                # Виправлено Ruff E722: Намагаємося видалити тимчасовий файл у разі збою через Exception
                 temp_excel = self.db_path.with_suffix(".xlsx.tmp")
                 if temp_excel.exists():
                     try:
@@ -103,12 +101,11 @@ class DataManager:
                         pass
 
     def get_aggregated_assets(self) -> List[Dict[str, Any]]:
-        """Повертає повний список позицій для миттєвого рендеру таблиці без групування."""
+        """Повертає повний список позицій для миттєвого рендеру таблиці."""
         if self._df is None or self._df.empty:
             logger.warning("DataFrame порожній або не завантажений.")
             return []
 
-        # Очищаємо дані від NaN (замінюємо на порожні рядки)
         df_clean = self._df.fillna("")
 
         if "Кількість (факт)" in df_clean.columns:
@@ -122,32 +119,27 @@ class DataManager:
         for row in raw_data:
             clean_row = {str(k): v for k, v in row.items()}
 
-            # 1. Відсікаємо непотрібні стовпці Y та Z, а також технічні стовпці
             clean_row.pop("Перекидка на Четверова", None)
             clean_row.pop("Перекидка на Іванова", None)
             keys_to_remove = [k for k in clean_row.keys() if k.startswith("Unnamed")]
             for k in keys_to_remove:
                 clean_row.pop(k, None)
 
-            # 2. Гнучка перевірка "Тип майна" -> "Тип"
-            # Якщо в Excel колонка називається "Тип майна", дублюємо її в "Тип" для фронтенду
+            # НАДІЙНИЙ ЗАХИСТ: якщо колонки UUID немає в Excel, створюємо її на льоту на основі інвентарного номера
+            if "UUID" not in clean_row or not clean_row["UUID"]:
+                clean_row["UUID"] = str(clean_row.get("Інв. / Номенкл. №", "")).strip()
+
             if "Тип майна" in clean_row:
                 clean_row["Тип"] = str(clean_row["Тип майна"]).strip()
             elif "Тип" not in clean_row:
                 clean_row["Тип"] = ""
 
-            # 3. НАДІЙНИЙ захист для колонки "Об'єкт" (щоб уникнути помилок на фронтенді)
-            # Перевіряємо чи взагагалі існує ключ "Об'єкт" в поточному рядку
             obj_value = clean_row.get("Об'єкт", "")
-
-            # Перетворюємо в рядок, якщо там випадково число (наприклад номер складу чи об'єкта)
             if not isinstance(obj_value, str):
                 obj_value = str(obj_value) if obj_value is not None else ""
-
             obj_value = obj_value.strip()
 
             if obj_value:
-                # Розбиваємо за крапкою з комою, очищаємо від пробілів та пустих значень
                 objects_list = [
                     obj.strip() for obj in obj_value.split(";") if obj.strip()
                 ]
@@ -157,9 +149,7 @@ class DataManager:
                 clean_row["Об'єкт_список"] = []
                 clean_row["Об'єкт"] = ""
 
-            # 4. Перестраховка для інших базових полів (щоб фронт не падав через відсутність ключів)
             for mandatory_field in [
-                "UUID",
                 "Найменування",
                 "Інв. / Номенкл. №",
                 "МВО (Прізвище)",
@@ -167,10 +157,7 @@ class DataManager:
                 if mandatory_field not in clean_row:
                     clean_row[mandatory_field] = ""
                 else:
-                    # Гарантуємо, що текстові поля віддаються як рядки
-                    if mandatory_field != "UUID" and not isinstance(
-                        clean_row[mandatory_field], str
-                    ):
+                    if not isinstance(clean_row[mandatory_field], str):
                         clean_row[mandatory_field] = str(clean_row[mandatory_field])
 
             result.append(clean_row)
@@ -178,7 +165,6 @@ class DataManager:
         return result
 
     def get_assets_by_name(self, name: str) -> List[Dict[str, Any]]:
-        """Повертає точну розбивку граф обліку зі збереженням усіх стовпців для модалки."""
         if self._df is None:
             return []
         df_filtered = self._df[self._df["Найменування"] == name].fillna("")
@@ -193,6 +179,9 @@ class DataManager:
             keys_to_remove = [k for k in clean_row.keys() if k.startswith("Unnamed")]
             for k in keys_to_remove:
                 clean_row.pop(k, None)
+
+            if "UUID" not in clean_row or not clean_row["UUID"]:
+                clean_row["UUID"] = str(clean_row.get("Інв. / Номенкл. №", "")).strip()
 
             if "Тип майна" in clean_row and not clean_row.get("Тип"):
                 clean_row["Тип"] = clean_row["Тип майна"]
@@ -218,15 +207,26 @@ class DataManager:
         if self._df is None:
             return {"success": False, "error": "База не завантажена."}
 
-        idx = self._df.index[self._df["UUID"] == uuid]
-        if len(idx) == 0:
-            return {"success": False, "error": "Актив не знайдений за вказаним UUID."}
+        # ВИПРАВЛЕННЯ: Якщо колонки 'UUID' немає, шукаємо рядок за колонкою 'Інв. / Номенкл. №'
+        if "UUID" in self._df.columns:
+            idx = self._df.index[self._df["UUID"].astype(str) == str(uuid)]
+        else:
+            idx = self._df.index[self._df["Інв. / Номенкл. №"].astype(str) == str(uuid)]
 
+        if len(idx) == 0:
+            logger.warning(f"⚠️ Рядок з ідентифікатором {uuid} не знайдено в Excel.")
+            return {"success": False, "error": f"Актив не знайдений: {uuid}"}
+
+        # Оновлюємо значення в оригінальному DataFrame
         for key, value in payload.items():
+            # Захист: не записуємо у файл технічне фронтенд-поле 'UUID' або 'Об'єкт_список'
+            if key in ["UUID", "Об'єкт_список"]:
+                continue
             if key in self._df.columns:
                 self._df.at[idx[0], key] = value
 
         self._save_cache_to_disk()
+        logger.info(f"✅ Дані майна {uuid} успішно оновлено в оперативній пам'яті.")
         return {"success": True}
 
     def bulk_move(
@@ -234,7 +234,14 @@ class DataManager:
     ) -> Dict[str, Any]:
         if self._df is None:
             return {"success": False, "error": "База недоступна."}
-        mask = self._df["UUID"].isin(uuids)
+
+        str_uuids = [str(u) for u in uuids]
+
+        if "UUID" in self._df.columns:
+            mask = self._df["UUID"].astype(str).isin(str_uuids)
+        else:
+            mask = self._df["Інв. / Номенкл. №"].astype(str).isin(str_uuids)
+
         if mask.any():
             self._df.loc[mask, "МВО (Прізвище)"] = payload.get("new_mvo")
             self._df.loc[mask, "Об'єкт"] = payload.get("new_object")
@@ -247,7 +254,14 @@ class DataManager:
     ) -> Dict[str, Any]:
         if self._df is None:
             return {"success": False, "error": "База недоступна."}
-        mask = self._df["UUID"].isin(uuids)
+
+        str_uuids = [str(u) for u in uuids]
+
+        if "UUID" in self._df.columns:
+            mask = self._df["UUID"].astype(str).isin(str_uuids)
+        else:
+            mask = self._df["Інв. / Номенкл. №"].astype(str).isin(str_uuids)
+
         if mask.any():
             self._df.loc[mask, "Кількість (факт)"] = 0
             self._df.loc[mask, "Відмітка про вибуття"] = payload.get(
