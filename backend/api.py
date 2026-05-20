@@ -16,7 +16,7 @@ class Api:
         self._window = window
 
     def get_assets(self) -> List[Dict[str, Any]]:
-        """Повертає полегшений, схлопнутий список для миттєвого рендеру таблиці."""
+        """Повертає повний, розгорнутий список позицій для миттєвого рендеру таблиці."""
         try:
             return self.data_manager.get_aggregated_assets()
         except Exception as e:
@@ -32,6 +32,7 @@ class Api:
             return []
 
     def bulkAction(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Обробка масових дій над майном (редагування, переміщення, списання, експорт)."""
         try:
             uuids: List[str] = config.get("uuids", [])
             action_type: str = config.get("actionType", "")
@@ -54,10 +55,31 @@ class Api:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def close_app(self):
+    def save_and_exit(self) -> Dict[str, Any]:
+        """
+        Явний міст для кнопки 'Зберегти та вийти'.
+        Викликає повну синхронізацію файлів та закриває вікно додатка.
+        """
         try:
+            logger.info(
+                "Виклик 'Зберегти та вийти' з фронтенду. Синхронізація даних..."
+            )
+            self.data_manager.save_final_excel()
+
+            if self._window is not None:
+                self._window.destroy()
+            return {"success": True}
+        except Exception as e:
+            logger.error(f"Критична помилка при збереженні та виході: {e}")
+            return {"success": False, "error": str(e)}
+
+    def close_app(self):
+        """Автоматичний тригер закриття додатка (наприклад, при кліку на системний хрестик вікна)."""
+        try:
+            logger.info("Закриття додатка. Автоматичний фінальний коміт даних...")
             self.data_manager.save_final_excel()
         except Exception as e:
-            logger.error(f"Помилка збереження: {e}")
+            logger.error(f"Помилка фінального збереження: {e}")
+
         if self._window is not None:
             self._window.destroy()
