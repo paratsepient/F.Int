@@ -60,10 +60,11 @@ const AssetTable = {
 
     loadData: function () {
         const self = this;
-        if (window.Api && typeof window.Api.get_assets === 'function') {
+        // ❗️ ВИПРАВЛЕНО: Тепер таблиця звертається до нового надійного ApiBridge ❗️
+        if (window.ApiBridge && typeof window.ApiBridge.getAssets === 'function') {
             document.getElementById('table-loading-overlay').style.display = 'block';
 
-            window.Api.get_assets().then(function (data) {
+            window.ApiBridge.getAssets().then(function (data) {
                 self._data = data || [];
                 self._filteredData = self._data;
 
@@ -78,6 +79,8 @@ const AssetTable = {
                 console.error("[AssetTable] Помилка завантаження даних:", err);
                 document.getElementById('table-loading-overlay').style.display = 'none';
             });
+        } else {
+            console.error("[AssetTable] КРИТИЧНА ПОМИЛКА: ApiBridge не знайдено. Перевірте завантаження api-bridge.js");
         }
     },
 
@@ -138,7 +141,7 @@ const AssetTable = {
 
         // Визначаємо перелік стовпчиків
         const sampleItem = this._filteredData[0];
-        const columns = Object.keys(sampleItem).filter(key => key !== 'UUID');
+        const columns = Object.keys(sampleItem).filter(key => key !== 'UUID' && !key.endsWith('_список'));
 
         // Малюємо верхній рядок заголовків
         this.renderDynamicHeader(columns);
@@ -165,9 +168,9 @@ const AssetTable = {
                         <td style="padding: 12px 16px; font-size: 13px; color: var(--color-text-muted);">${i + 1}</td>
                 `;
 
-                // Циклом виводимо комірки для кожної з 24 колонок (A-X)
+                // Циклом виводимо комірки для кожної з колонок
                 columns.forEach(col => {
-                    const val = row[col] !== undefined && row[col] !== null ? row[col] : '—';
+                    const val = row[col] !== undefined && row[col] !== null && row[col] !== "" ? row[col] : '—';
                     const isName = col === 'Найменування';
                     const isQty = col === 'Кількість (факт)';
                     const isInv = col === 'Інв. / Номенкл. №' || col.toLowerCase().includes('№');
@@ -298,7 +301,6 @@ const AssetTable = {
         const q = filters.searchQuery.toLowerCase();
 
         this._filteredData = this._data.filter(row => {
-            // [УНІВЕРСАЛЬНИЙ ПОШУК] Перевіряє збіг тексту в абсолютно ВСІХ 24 колонках з Excel
             const matchSearch = q === '' || Object.keys(row).some(key =>
                 key !== 'UUID' && row[key] && String(row[key]).toLowerCase().includes(q)
             );
