@@ -1,193 +1,229 @@
 /**
- * F.Int — Ізольований модуль згрупованої картки майна (Grouped Modal Component)
+ * Автономний модуль для відображення детальної інформації про майно
+ * та збереження оновлених даних у реальному часі.
  */
-
 const GroupedModal = {
-    _currentEditingAssets: [],
+    currentAsset: null,
 
-    init: function () {
-        console.log("[GroupedModal] Ініціалізація автономного модуля карток майна...");
-        this.injectModalStructure();
-        this.listenEvents();
-    },
-
-    injectModalStructure: function () {
-        const existingModal = document.getElementById('edit-asset-modal');
-        if (existingModal) existingModal.remove();
-
-        const modalHtml = `
-            <div id="edit-asset-modal" class="modal-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center; backdrop-filter: blur(2px);">
-                <div class="modal-content" style="background-color: var(--color-bg-main); border: 1px solid var(--color-border); border-radius: 8px; width: 680px; max-height: 85vh; display: flex; flex-direction: column; box-shadow: 0 10px 25px rgba(0,0,0,0.2); animation: fadeIn 0.2s;">
-                    
-                    <div style="padding: 20px 24px; border-bottom: 1px solid var(--color-border); display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;">
-                        <div>
-                            <h2 id="edit-modal-title" style="font-size: 18px; margin-bottom: 4px; color: var(--color-text-main);">Картка майна</h2>
-                            <p id="edit-modal-subtitle" style="font-size: 12px; color: var(--color-text-muted);">Згруповано граф обліку: 0</p>
-                        </div>
-                        <button id="btn-close-modal" style="background: transparent; border: none; color: var(--color-text-muted); font-size: 18px; cursor: pointer; outline: none;">✕</button>
-                    </div>
-                    
-                    <div id="edit-modal-dynamic-content" style="padding: 24px; overflow-y: auto; display: flex; flex-grow: 1;">
-                        </div>
-
-                    <div style="padding: 20px 24px; border-top: 1px solid var(--color-border); display: flex; justify-content: flex-end; gap: 12px; flex-shrink: 0; background-color: var(--color-bg-sidebar); border-radius: 0 0 8px 8px;">
-                        <button id="btn-cancel-edit" class="btn-save-close" style="width: auto; background: transparent;">Скасувати</button>
-                        <button id="btn-save-edit" class="btn-save-close" style="width: auto; background-color: var(--color-accent-subtle); border-color: var(--color-accent); color: var(--color-accent);">💾 Зберегти зміни по всій групі</button>
-                    </div>
-
-                </div>
-            </div>
-        `;
-        document.body.insertAdjacentHTML('beforeend', modalHtml);
-
-        document.getElementById('btn-close-modal').addEventListener('click', () => this.close());
-        document.getElementById('btn-cancel-edit').addEventListener('click', () => this.close());
-        document.getElementById('btn-save-edit').addEventListener('click', () => this.saveGroupedChanges());
-    },
-
-    listenEvents: function () {
-        const self = this;
-        if (window.EventBus) {
-            window.EventBus.on('asset:open-grouped-modal', function (payload) {
-                if (payload && payload.asset) {
-                    self.open(payload.asset);
-                }
-            });
-        }
-    },
-
-    open: function (asset) {
-        const self = this;
-        if (!asset) return;
-
-        const assetName = asset["Найменування"] || '—';
-        const allData = (window.AssetTable && window.AssetTable._data) ? window.AssetTable._data : [asset];
-        const graphs = allData.filter(a => a["Найменування"] === assetName);
-
-        self._currentEditingAssets = graphs.length > 0 ? graphs : [asset];
-
-        document.getElementById('edit-modal-title').innerText = assetName;
-        document.getElementById('edit-modal-subtitle').innerText = `Виявлено роздільних граф обліку (за Об'єктами/МВО): ${self._currentEditingAssets.length}`;
-
-        const contentContainer = document.getElementById('edit-modal-dynamic-content');
-        contentContainer.innerHTML = '';
-
-        const scrollWrapper = document.createElement('div');
-        scrollWrapper.style.cssText = "display: flex; flex-direction: column; gap: 24px; width: 100%;";
-
-        self._currentEditingAssets.forEach((item, idx) => {
-            const block = document.createElement('div');
-            block.className = "grouped-asset-block";
-            block.dataset.uuid = String(item["UUID"]);
-            block.style.cssText = "background-color: var(--color-bg-sidebar); border: 1px solid var(--color-border); border-radius: 8px; padding: 18px; display: flex; flex-direction: column; gap: 12px;";
-
-            let blockHeader = `
-                <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--color-border); padding-bottom: 8px;">
-                    <span style="font-size: 12px; font-weight: 700; color: var(--color-accent);">ГРАФА #${idx + 1}</span>
-                    <span style="font-size: 11px; color: var(--color-text-muted); font-family: monospace;">ID: ${item["UUID"] ? String(item["UUID"]).split('-')[0] : '—'}...</span>
-                </div>
-            `;
-
-            const gridContainer = document.createElement('div');
-            gridContainer.style.cssText = "display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top:10px;";
-
-            Object.keys(item).forEach(key => {
-                if (key === 'UUID' || key === 'Об\'єкт_список' || key === 'Тип майна') return;
-
-                const isFullWidth = ['Найменування', 'МВО (Прізвище)', 'Об\'єкт', 'Примітки', 'Опис'].includes(key) || key.length > 15;
-                const fieldWrapper = document.createElement('div');
-                if (isFullWidth) fieldWrapper.style.gridColumn = 'span 2';
-                fieldWrapper.style.cssText = "display: flex; flex-direction: column; gap: 4px;";
-
-                const label = document.createElement('label');
-                label.style.cssText = "font-size: 11px; color: var(--color-text-muted); font-weight: 600;";
-                label.innerText = key;
-
-                // Створення інпутів через об'єктну модель гарантує 100% точність введення без збоїв кешу
-                const input = document.createElement('input');
-                input.type = "text";
-                input.className = "field-dynamic-input doc-title-input";
-                input.dataset.key = key;
-                input.value = (item[key] !== null && item[key] !== undefined) ? String(item[key]) : '';
-
-                fieldWrapper.appendChild(label);
-                fieldWrapper.appendChild(input);
-                gridContainer.appendChild(fieldWrapper);
-            });
-
-            block.innerHTML = blockHeader;
-            block.appendChild(gridContainer);
-            scrollWrapper.appendChild(block);
-        });
-
-        contentContainer.appendChild(scrollWrapper);
-        document.getElementById('edit-asset-modal').style.display = 'flex';
-    },
-
-    close: function () {
-        document.getElementById('edit-asset-modal').style.display = 'none';
-        this._currentEditingAssets = [];
-    },
-
-    saveGroupedChanges: function () {
-        const self = this;
-        const blocks = document.querySelectorAll('.grouped-asset-block');
-        const promises = [];
-
-        const btnSave = document.getElementById('btn-save-edit');
-        btnSave.disabled = true;
-        btnSave.innerText = '⏳ Збереження граф...';
-
-        const apiTarget = window.ApiBridge || window.Api || (window.pywebview && window.pywebview.api);
-        const bulkMethod = (apiTarget && typeof apiTarget.bulkAction === 'function') ? apiTarget.bulkAction : null;
-
-        blocks.forEach(block => {
-            const uuid = String(block.dataset.uuid);
-            const payload = {};
-
-            block.querySelectorAll('.field-dynamic-input').forEach(input => {
-                const key = input.dataset.key;
-                let val = input.value.trim();
-                if (key === 'Кількість (факт)') {
-                    val = parseInt(val) || 0;
-                }
-                payload[key] = val;
-            });
-
-            if (bulkMethod) {
-                promises.push(
-                    bulkMethod.call(apiTarget, {
-                        uuids: [uuid],
-                        actionType: 'edit',
-                        mode: 'save',
-                        payload: payload
-                    })
-                );
-            }
-        });
-
-        if (promises.length === 0) {
-            console.error("[GroupedModal] Не знайдено bulkAction.");
-            btnSave.disabled = false;
-            btnSave.innerText = '💾 Зберегти зміни по всій групі';
+    /**
+     * Універсальний метод ініціалізації картки.
+     * ВИПРАВЛЕНО: захист від виклику без аргументів та від передачі click-події замість даних.
+     */
+    init(dataOrEvent) {
+        // ВИПРАВЛЕННЯ 1: якщо викликано без аргументів — мовчки виходимо (не засмічуємо консоль помилкою)
+        if (dataOrEvent === undefined || dataOrEvent === null) {
+            console.warn("[GroupedModal] init() викликано без аргументів — ігноруємо.");
             return;
         }
 
-        Promise.all(promises).then(function () {
-            self.close();
-            // Змушуємо таблицю стерти застарілі масиви пам'яті і зчитати чистий Excel файл, який ми щойно перезаписали
-            if (window.AssetTable && typeof window.AssetTable.loadData === 'function') {
-                window.AssetTable.loadData();
-            } else if (window.EventBus) {
-                window.EventBus.emit('table:refresh-required');
-            }
-        }).catch(function (err) {
-            alert(`Помилка оновлення картки: ${err.message}`);
-        }).finally(function () {
-            btnSave.disabled = false;
-            btnSave.innerText = '💾 Зберегти зміни по всій групі';
+        console.log("[GroupedModal] init() отримав:", typeof dataOrEvent, dataOrEvent);
+
+        let assetData = null;
+
+        if (dataOrEvent && dataOrEvent.detail) {
+            // Прийшла CustomEvent з EventBus
+            assetData = dataOrEvent.detail.asset || dataOrEvent.detail;
+        } else if (dataOrEvent instanceof Event || (dataOrEvent && dataOrEvent.target && dataOrEvent.type)) {
+            // ВИПРАВЛЕННЯ 2: прийшов звичайний DOM-івент (click) — це помилка виклику в asset-table.js
+            // Намагаємось дістати дані з data-атрибуту або currentAsset
+            console.error(
+                "[GroupedModal] УВАГА: передано DOM-подію замість об'єкта даних!\n" +
+                "Виправте asset-table.js: замість GroupedModal.init(event) використовуйте GroupedModal.open(assetObject).\n" +
+                "Отримана подія:", dataOrEvent
+            );
+            // Запасний варіант — беремо останній відомий asset
+            assetData = this.currentAsset;
+        } else if (dataOrEvent && typeof dataOrEvent === 'object' && !Array.isArray(dataOrEvent)) {
+            // Чистий JS-об'єкт з даними майна
+            assetData = dataOrEvent;
+        }
+
+        if (!assetData || typeof assetData !== 'object') {
+            console.error("[GroupedModal] Не вдалося отримати дані майна. Отримано:", dataOrEvent);
+            return;
+        }
+
+        this.currentAsset = assetData;
+        console.log("[GroupedModal] Рендеримо картку для:", assetData);
+
+        // Шукаємо або створюємо overlay
+        let modalOverlay = document.getElementById('grouped-modal-overlay');
+        if (!modalOverlay) {
+            modalOverlay = document.createElement('div');
+            modalOverlay.id = 'grouped-modal-overlay';
+            modalOverlay.className = 'modal-overlay';
+            document.body.appendChild(modalOverlay);
+        }
+
+        const invNumber = assetData["Інвентарний / Номенклатурний №"]
+            || assetData["Інв. / Номенкл. №"]
+            || assetData["Інвентарний номер"]
+            || '';
+        const assetQty = assetData["Кількість (факт)"]
+            || assetData["Загальна кількість"]
+            || assetData["Кількість"]
+            || '0';
+
+        // Екранування значень для безпечної вставки в HTML
+        const esc = (val) => String(val ?? '').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+
+        modalOverlay.innerHTML = `
+            <div class="modal-window">
+                <div class="modal-header">
+                    <h2>Детальна інформація / Редагування</h2>
+                    <span class="modal-close-btn" id="modal-close-x">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <form id="grouped-modal-form" class="modal-form">
+                        <div class="form-group">
+                            <label>Найменування (Стовпець F):</label>
+                            <input type="text" data-field="Найменування" value="${esc(assetData["Найменування"])}">
+                        </div>
+                        <div class="form-group">
+                            <label>Інвентарний номер (Стовпець H):</label>
+                            <input type="text" data-field="Інвентарний / Номенклатурний №" value="${esc(invNumber)}">
+                        </div>
+                        <div class="form-group">
+                            <label>Тип (Стовпець E):</label>
+                            <input type="text" data-field="Тип майна" value="${esc(assetData["Тип майна"] || assetData["Тип"])}">
+                        </div>
+                        <div class="form-group">
+                            <label>Одиниця виміру (Стовпець K):</label>
+                            <input type="text" data-field="Одиниця виміру" value="${esc(assetData["Одиниця виміру"])}">
+                        </div>
+                        <div class="form-group">
+                            <label>Кількість (Стовпець L):</label>
+                            <input type="number" data-field="Кількість (факт)" value="${esc(assetQty)}">
+                        </div>
+                        <div class="form-group">
+                            <label>МВО (Стовпець C):</label>
+                            <input type="text" data-field="МВО (Прізвище)" value="${esc(assetData["МВО (Прізвище)"] || assetData["МВО"])}">
+                        </div>
+                        <div class="form-group">
+                            <label>Підрозділ (Стовпець B):</label>
+                            <input type="text" data-field="Підрозділ (Частина)" value="${esc(assetData["Підрозділ (Частина)"] || assetData["Підрозділ"])}">
+                        </div>
+                        <div class="form-group">
+                            <label>Об'єкт / Поверх (Стовпець D):</label>
+                            <input type="text" data-field="Об'єкт" value="${esc(assetData["Об'єкт"])}">
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" id="modal-close-btn">Скасувати</button>
+                    <button type="button" class="btn btn-primary" id="modal-save-btn">Зберегти зміни</button>
+                </div>
+            </div>
+        `;
+
+        modalOverlay.style.display = 'flex';
+        this.initEvents();
+    },
+
+    // Псевдоніми для сумісності з asset-table.js
+    open(data) { this.init(data); },
+    show(data) { this.init(data); },
+
+    initEvents() {
+        const closeX = document.getElementById('modal-close-x');
+        const closeBtn = document.getElementById('modal-close-btn');
+        const saveBtn = document.getElementById('modal-save-btn');
+        const modalOverlay = document.getElementById('grouped-modal-overlay');
+
+        if (closeX) closeX.onclick = () => this.close();
+        if (closeBtn) closeBtn.onclick = () => this.close();
+
+        if (modalOverlay) {
+            modalOverlay.onclick = (e) => {
+                if (e.target === modalOverlay) this.close();
+            };
+        }
+
+        if (saveBtn) {
+            saveBtn.onclick = async (e) => {
+                e.preventDefault();
+                await this.handleSave();
+            };
+        }
+    },
+
+    close() {
+        const modalOverlay = document.getElementById('grouped-modal-overlay');
+        if (modalOverlay) {
+            modalOverlay.style.display = 'none';
+            modalOverlay.innerHTML = '';
+        }
+        this.currentAsset = null;
+        console.log("[GroupedModal] Закрито.");
+    },
+
+    async handleSave() {
+        console.log("[GroupedModal] Збереження...");
+        const form = document.getElementById('grouped-modal-form');
+        if (!form) return;
+
+        const assetUuid = this.currentAsset?.["UUID"] ? String(this.currentAsset["UUID"]) : null;
+        if (!assetUuid) {
+            console.error("[GroupedModal] UUID відсутній у:", this.currentAsset);
+            alert("Помилка: не вдалося знайти ідентифікатор рядка (UUID).");
+            return;
+        }
+
+        const payload = { ...this.currentAsset, "UUID": assetUuid };
+        form.querySelectorAll('input[data-field]').forEach(input => {
+            payload[input.getAttribute('data-field')] = input.value.trim();
         });
+
+        // Дублюємо для сумісності з Python-бекендом
+        payload["Тип"] = payload["Тип майна"];
+        payload["Інв. / Номенкл. №"] = payload["Інвентарний / Номенклатурний №"];
+
+        const apiBridge = window.ApiBridge || window.pywebview?.api || window.Api;
+        if (!apiBridge) {
+            alert("Помилка: міст зв'язку з Python не знайдено (ApiBridge/pywebview.api).");
+            return;
+        }
+
+        const saveBtn = document.getElementById('modal-save-btn');
+        try {
+            if (saveBtn) { saveBtn.disabled = true; saveBtn.innerText = "⏳ Зберігаємо..."; }
+
+            console.log("[GroupedModal] Payload на бекенд:", payload);
+
+            let response;
+            if (typeof apiBridge.edit_asset === 'function') {
+                response = await apiBridge.edit_asset(payload);
+            } else if (typeof apiBridge.bulkAction === 'function') {
+                response = await apiBridge.bulkAction({ action: 'edit', data: payload });
+            } else if (typeof apiBridge.saveGroupedChanges === 'function') {
+                response = await apiBridge.saveGroupedChanges(payload);
+            } else {
+                response = await apiBridge.bulkAction('edit', payload);
+            }
+
+            console.log("[GroupedModal] Відповідь:", response);
+
+            if (response?.success) {
+                this.close();
+                if (typeof window.AssetTable?.loadData === 'function') {
+                    window.AssetTable.loadData();
+                } else {
+                    location.reload();
+                }
+            } else {
+                throw new Error(response?.error || "Бекенд відхилив операцію.");
+            }
+        } catch (error) {
+            console.error("[GroupedModal] Помилка збереження:", error);
+            alert(`Не вдалося зберегти: ${error.message}`);
+            if (saveBtn) { saveBtn.disabled = false; saveBtn.innerText = "Зберегти зміни"; }
+        }
     }
 };
 
 window.GroupedModal = GroupedModal;
+
+document.addEventListener('asset:open-grouped-modal', (e) => {
+    console.log("[EventBus] asset:open-grouped-modal:", e);
+    GroupedModal.init(e);
+});
