@@ -1,7 +1,6 @@
 /**
  * F.Int — Компонент панелі фільтрації (Filter Panel Component)
- * Керує пошуком, вибором МВО та Об'єктів, транслює зміни через EventBus.
- * Повністю сумісний з лінтерами VS Code (без помилок 1005/1109/1161).
+ * Динамічно зчитує МВО та Об'єкти з актуальної бази даних Excel.
  */
 
 const FilterPanel = {
@@ -12,7 +11,7 @@ const FilterPanel = {
         object: 'all'
     },
 
-    // Списки для випадаючих меню
+    // Списки для випадаючих меню (заповнюються автоматично з Excel)
     _mvoList: [],
     _objectsList: [],
 
@@ -22,23 +21,37 @@ const FilterPanel = {
     init: function () {
         console.log("[FilterPanel] Ініціалізація панелі фільтрів...");
 
-        // Завантажуємо актуальні довідники для селектів
-        this.fetchFilterDirectories();
+        // Завантажуємо актуальні довідники на основі реальних даних
+        this.buildDynamicDirectories();
     },
 
     /**
-     * Отримання списков МВО та Об'єктів для випадаючих списків
+     * Витягує унікальні значення МВО та Об'єктів з масиву AssetTable
      */
-    fetchFilterDirectories: function () {
-        const self = this;
+    buildDynamicDirectories: function () {
+        // Беремо масив даних, який AssetTable вже успішно отримав з бекенду
+        const rawData = window.AssetTable && window.AssetTable._data ? window.AssetTable._data : [];
 
-        // Імітація отримання унікальних значень з DataFrame бекенду
-        setTimeout(function () {
-            self._mvoList = ["Іванов А.В.", "Петров С.М.", "Іваненко О.П."];
-            self._objectsList = ["Офіс 302", "Конференц-зал", "Кімната 101", "Склад"];
+        const mvoSet = new Set();
+        const objectSet = new Set();
 
-            self.render();
-        }, 100);
+        rawData.forEach(function (item) {
+            // Зчитуємо поле МВО (Прізвище) з Structured_Asset_Base.xlsx
+            if (item["МВО (Прізвище)"]) {
+                mvoSet.add(item["МВО (Прізвище)"].trim());
+            }
+            // Зчитуємо поле Об'єкт
+            if (item["Об'єкт"]) {
+                objectSet.add(item["Об'єкт"].trim());
+            }
+        });
+
+        // Сортуємо за алфавітом для зручності користувача
+        this._mvoList = Array.from(mvoSet).sort();
+        this._objectsList = Array.from(objectSet).sort();
+
+        // Малюємо інтерфейс з актуальними списками
+        this.render();
     },
 
     /**

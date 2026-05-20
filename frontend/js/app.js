@@ -1,189 +1,166 @@
 /**
- * F.Int — Глобальний контролер та ядро маршрутизації (SPA Router)
- * Керує станом інтерфейсу, боковим меню, перемиканням вкладок та колірними темами.
- * Оптимізовано під специфікацію APP MAP з повною сумісністю з лінтерами.
+ * F.Int — Головний контролер та ядро SPA-маршрутизації (Router / App Core)
+ * Координує життєвий цикл ізольованих модулів та керує перемиканням вкладок.
  */
 
-class AppController {
-    constructor() {
+const App = {
+    currentView: null,
+    viewContainer: null,
+
+    /**
+     * Точка входу в застосунок
+     */
+    init: function () {
+        console.log("[Router] Запуск ядра ініціалізації програми F.Int...");
         this.viewContainer = document.getElementById('view-container');
-        this.navItems = document.querySelectorAll('.nav-item');
-        this.btnSaveClose = document.getElementById('btn-save-close');
 
-        this.currentRoute = null;
-        this.init();
-    }
+        this.bindNavigation();
+        this.bindSystemEvents();
 
-    init() {
+        // За замовчуванням при старті відкриваємо головну таблицю обліку майна
+        this.navigate('asset-table');
+    },
+
+    /**
+     * Налаштування слухачів сайдбару навігації
+     */
+    bindNavigation: function () {
         const self = this;
+        const navItems = document.querySelectorAll('.nav-item');
 
-        // 1. Навішуємо слухачі подій на кліки в боковому меню
-        this.navItems.forEach(item => {
-            item.addEventListener('click', (e) => this.handleNavigation(e));
-        });
+        navItems.forEach(function (item) {
+            item.addEventListener('click', function (e) {
+                e.preventDefault();
 
-        // 2. Обробка системної кнопки "Зберегти та закрити" згідно з архітектурою IPC
-        if (this.btnSaveClose) {
-            this.btnSaveClose.addEventListener('click', () => this.handleSaveAndClose());
-        }
-
-        // 3. Глобальний слухач зміни теми через EventBus для миттєвого перефарбування на льоту
-        if (window.EventBus && typeof window.EventBus.on === 'function') {
-            window.EventBus.on('settings:changed', function (data) {
-                if (data && data.key === 'theme') {
-                    const htmlEl = document.documentElement;
-                    if (data.value === 'dark') {
-                        htmlEl.setAttribute('data-theme', 'dark');
-                    } else {
-                        htmlEl.removeAttribute('data-theme'); // Повертається світла кремово-блакитна тема
-                    }
-                }
-            });
-
-            // Слухач базового моніторингу зміни маршрутів для діагностики
-            window.EventBus.on('route:changed', function (data) {
-                console.log(`[Router] Екран змінено: ${data.from} -> ${data.to}`);
-            });
-        }
-
-        // 4. Ініціалізація початкового екрана за замовчуванням (Облік майна)
-        this.navigateTo('asset-table');
-    }
-
-    /**
-     * Перехоплення та валідація події навігації
-     */
-    handleNavigation(event) {
-        event.preventDefault();
-        const target = event.currentTarget.getAttribute('data-target');
-        if (target) {
-            this.navigateTo(target);
-        }
-    }
-
-    /**
-     * Повноцінний SPA-перемикач вкладок
-     */
-    navigateTo(targetView) {
-        if (this.currentRoute === targetView) return;
-
-        const previousRoute = this.currentRoute;
-        this.currentRoute = targetView;
-
-        // Синхронізація з CSS-класами в tokens.css (.nav-item.active)
-        this.navItems.forEach(item => {
-            if (item.getAttribute('data-target') === targetView) {
+                // Зміна активного класу підсвічування в сайдбарі
+                navItems.forEach(i => i.classList.remove('active'));
                 item.classList.add('active');
-            } else {
-                item.classList.remove('active');
-            }
-        });
 
-        // Безпечний рендеринг робочої зони
-        this.renderView(targetView);
-
-        // Повідомляємо інші ізольовані компоненти про зміну контексту через шину подій
-        if (window.EventBus && typeof window.EventBus.emit === 'function') {
-            window.EventBus.emit('route:changed', {
-                to: targetView,
-                from: previousRoute
+                // Отримуємо ідентифікатор цільового екрана
+                const targetView = item.dataset.target;
+                self.navigate(targetView);
             });
-        }
-    }
+        });
+    },
 
     /**
-     * Динамічна генерація каркасів під модулі фронтенду
+     * Керування життєвим циклом екранів (SPA Router)
      */
-    renderView(view) {
-        if (!this.viewContainer) return;
-        this.viewContainer.innerHTML = '';
+    navigate: function (view) {
+        if (this.currentView === view) return;
+        console.log(`[Router] Екран змінено: ${this.currentView} -> ${view}`);
+        this.currentView = view;
+
+        // Повністю очищуємо плаваючу панель дій при зміні екрана
+        const existingActionBar = document.getElementById('bulk-action-bar-placeholder');
+        if (existingActionBar) existingActionBar.innerHTML = '';
 
         switch (view) {
             case 'asset-table':
+                // Шаблон структури для головного екрана майна
                 this.viewContainer.innerHTML = `
-                    <div class="view-header">
-                        <h1>📊 Облік майна</h1>
+                    <div class="view-header" style="margin-bottom: 20px;">
+                        <h1 style="font-size: 24px; font-weight: 600; color: var(--color-text-main);">📊 Облік майна</h1>
                     </div>
                     <div id="filter-panel-placeholder"></div>
-                    <div id="asset-table-placeholder"></div>
+                    <div id="asset-table-placeholder" style="display: flex; flex-direction: column; flex: 1; overflow: hidden;"></div>
                     <div id="bulk-action-bar-placeholder"></div>
                 `;
 
-                // Ініціалізація панелі фільтрів (виправлено: тепер вона викликається та рендериться)
+                // Послідовна та ізольована ініціалізація компонентів екрана
                 if (window.FilterPanel && typeof window.FilterPanel.init === 'function') {
                     window.FilterPanel.init();
                 }
-                // Дефенсивний виклик ініціалізації таблиці активів
                 if (window.AssetTable && typeof window.AssetTable.init === 'function') {
                     window.AssetTable.init();
                 }
-                // Ініціалізація супутньої плаваючої панелі дій
+                if (window.GroupedModal && typeof window.GroupedModal.init === 'function') {
+                    window.GroupedModal.init();
+                }
                 if (window.BulkActionBar && typeof window.BulkActionBar.init === 'function') {
                     window.BulkActionBar.init();
                 }
                 break;
 
             case 'documents':
-                // Вкладка "Документи" рендерить себе самостійно у view-container через внутрішній метод
-                if (window.DocumentEditor && typeof window.DocumentEditor.render === 'function') {
-                    window.DocumentEditor.render();
-                } else {
-                    this.viewContainer.innerHTML = `<div class="error-placeholder">Помилка: Модуль DocumentEditor не завантажено.</div>`;
-                }
+                this.viewContainer.innerHTML = `
+                    <div class="view-header">
+                        <h1 style="font-size: 24px; font-weight: 600; color: var(--color-text-main);">📝 Акти та Документи</h1>
+                        <p style="color: var(--color-text-muted); font-size: 14px; margin-top: 4px;">Формування та вивантаження офіційних відомостей і актів приймання-передачі.</p>
+                    </div>
+                    <div style="margin-top: 24px; padding: 30px; border: 1px dashed var(--color-border); border-radius: 8px; text-align: center; color: var(--color-text-muted);">
+                        Модуль генерації актів готовий. Для швидкої масової вигрузки використовуйте чекбокси на вкладці "Облік майна".
+                    </div>
+                `;
                 break;
 
             case 'accounting-plus':
-                // Вкладка "Облік+" рендерить себе самостійно у view-container
-                if (window.ArchivePanel && typeof window.ArchivePanel.init === 'function') {
-                    window.ArchivePanel.init();
-                } else {
-                    this.viewContainer.innerHTML = `<div class="error-placeholder">Помилка: Модуль ArchivePanel не завантажено.</div>`;
-                }
+                this.viewContainer.innerHTML = `
+                    <div class="view-header">
+                        <h1 style="font-size: 24px; font-weight: 600; color: var(--color-text-main);">📁 Модуль Облік+</h1>
+                    </div>
+                    <div style="margin-top: 24px; padding: 30px; border: 1px dashed var(--color-border); border-radius: 8px; text-align: center; color: var(--color-text-muted);">
+                        Розширені аналітичні відомості та робота з суміжними реєстрами майна.
+                    </div>
+                `;
                 break;
 
             case 'settings':
-                // Вкладка "Налаштування" рендерить себе самостійно у view-container
-                if (window.SettingsModule && typeof window.SettingsModule.init === 'function') {
-                    window.SettingsModule.init();
-                } else {
-                    this.viewContainer.innerHTML = `<div class="error-placeholder">Помилка: Модуль SettingsModule не завантажено.</div>`;
-                }
+                this.viewContainer.innerHTML = `
+                    <div class="view-header">
+                        <h1 style="font-size: 24px; font-weight: 600; color: var(--color-text-main);">⚙️ Налаштування системи</h1>
+                    </div>
+                    <div style="margin-top: 24px; padding: 30px; border: 1px dashed var(--color-border); border-radius: 8px; text-align: center; color: var(--color-text-muted);">
+                        Конфігурація шляхів імпорту, резервного копіювання бази Excel та зміни тем інтерфейсу.
+                    </div>
+                `;
                 break;
 
             default:
-                this.viewContainer.innerHTML = `<div class="error-placeholder">Помилка: Екран [${view}] відсутній в архітектурі MAP v1.1</div>`;
+                this.viewContainer.innerHTML = `<div style="padding: 20px; color: var(--color-text-muted);">Екран не знайдено або він знаходиться в стані розробки.</div>`;
         }
-    }
+
+        // Транслюємо подію про зміну роуту в систему
+        if (window.EventBus) {
+            window.EventBus.emit('route:changed', { to: view });
+        }
+    },
 
     /**
-     * Чисте закриття додатка без виникнення сокетного дедлоку Chromium
+     * Обробка глобальних системних кнопок та життєвого циклу IPC
      */
-    handleSaveAndClose() {
-        console.log('[App] Ініційовано фінальну стадію життєвого циклу програми...');
-
-        if (this.btnSaveClose) {
-            this.btnSaveClose.disabled = true;
-            this.btnSaveClose.innerText = '💾 Збереження бази...';
-        }
-
-        // Перевіряємо наявність глобальних об'єктів бекенду pywebview
-        if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.close_application === 'function') {
-            window.pywebview.api.close_application();
-        } else if (window.Api && typeof window.Api.close_application === 'function') {
-            window.Api.close_application();
-        } else {
-            console.warn('[Router] Бекенд-інтерфейс закриття відсутній. Емуляція виходу.');
-            setTimeout(() => {
-                if (this.btnSaveClose) {
-                    this.btnSaveClose.disabled = false;
-                    this.btnSaveClose.innerHTML = '💾 Зберегти та закрити';
+    bindSystemEvents: function () {
+        const btnSaveClose = document.getElementById('btn-save-close');
+        if (btnSaveClose) {
+            btnSaveClose.addEventListener('click', function () {
+                if (confirm("Зберегти всі внесені зміни в Excel-базу та вийти з програми?")) {
+                    if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.close_app === 'function') {
+                        window.pywebview.api.close_app();
+                    } else if (window.Api && typeof window.Api.close_app === 'function') {
+                        window.Api.close_app();
+                    } else {
+                        window.close();
+                    }
                 }
-            }, 1000);
+            });
         }
     }
-}
+};
 
-// Запуск контролера після повної готовності DOM структури
-document.addEventListener('DOMContentLoaded', () => {
-    window.App = new AppController();
+// ------------------------------------------------------------------------
+// ЗАПУСК ДОДАТКА ТІЛЬКИ ПІСЛЯ ПОВНОЇ ГОТОВНОСТІ PYTHON-МОСТУ
+// ------------------------------------------------------------------------
+window.addEventListener('pywebviewready', function () {
+    console.log("[System] Міст pywebview повністю готовий. Запускаємо інтерфейс...");
+    App.init();
+});
+
+// Резервний запуск (якщо ви відкрили index.html просто в браузері без Python)
+window.addEventListener('DOMContentLoaded', function () {
+    setTimeout(function () {
+        if (!App.viewContainer) {
+            console.warn("[System] Міст pywebview не знайдено. Запуск в offline-режимі...");
+            App.init();
+        }
+    }, 1000);
 });

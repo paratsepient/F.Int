@@ -6,16 +6,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>F.Int — Система обліку майна</title>
 
-    <link rel="icon"
-        href="data:image/x-icon;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==">
+    <link rel="stylesheet" href="css/tokens.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>F.Int — Система обліку майна</title>
+
+    <link rel="icon" href="data:,">
 
     <link rel="stylesheet" href="css/tokens.css">
-    <link rel="stylesheet" href="css/bulk-actions.css">
 </head>
 
 <body>
 
     <div class="app-layout">
+
         <aside class="sidebar">
             <div class="sidebar-header">
                 <span class="logo-text">F.Int</span>
@@ -23,45 +27,57 @@
             </div>
 
             <nav class="sidebar-nav">
-                <a href="#asset-table" class="nav-item active" data-target="asset-table">
-                    <span class="nav-icon">📊</span> Облік майна
+                <a href="#" class="nav-item active" data-target="asset-table">
+                    <span class="nav-icon">📊</span>
+                    <span class="nav-label">Облік майна</span>
                 </a>
-                <a href="#documents" class="nav-item" data-target="documents">
-                    <span class="nav-icon">📁</span> Документи
+                <a href="#" class="nav-item" data-target="documents">
+                    <span class="nav-icon">📝</span>
+                    <span class="nav-label">Документи</span>
                 </a>
-                <a href="#accounting-plus" class="nav-item" data-target="accounting-plus">
-                    <span class="nav-icon">➕</span> Облік+
+                <a href="#" class="nav-item" data-target="accounting-plus">
+                    <span class="nav-icon">📁</span>
+                    <span class="nav-label">Облік+</span>
                 </a>
-                <a href="#settings" class="nav-item" data-target="settings">
-                    <span class="nav-icon">⚙️</span> Налаштування
+                <a href="#" class="nav-item" data-target="settings">
+                    <span class="nav-icon">⚙️</span>
+                    <span class="nav-label">Налаштування</span>
                 </a>
             </nav>
 
             <div class="sidebar-footer">
                 <button id="btn-save-close" class="btn-save-close">
-                    💾 Зберегти та закрити
+                    <span>💾</span> Зберегти та закрити
                 </button>
             </div>
         </aside>
 
         <main class="main-content">
             <div id="view-container">
-                <div class="loading-placeholder">Ініціалізація інтерфейсу...</div>
+                <div class="loading-placeholder">Завантаження інтерфейсу...</div>
             </div>
         </main>
+
     </div>
 
-    <script src="js/event-bus.js"></script>
-    <script src="js/api-bridge.js"></script>
+    <script src="js/components/event-bus.js"></script>
+
+    <script src="js/components/api-bridge.js"></script>
 
     <script src="js/components/filter-panel.js"></script>
+
+    <script src="js/components/grouped-modal.js"></script>
+
     <script src="js/components/asset-table.js"></script>
+
     <script src="js/components/bulk-action-bar.js"></script>
+
     <script src="js/components/document-editor.js"></script>
     <script src="js/components/archive-panel.js"></script>
     <script src="js/components/settings.js"></script>
 
     <script src="js/app.js"></script>
+
 </body>
 
 </html>
