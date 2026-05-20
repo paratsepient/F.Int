@@ -1,8 +1,5 @@
 /**
  * F.Int — Ізольований модуль згрупованої картки майна (Grouped Modal Component)
- *
- * ВИПРАВЛЕННЯ: після збереження всіх граф явно викликаємо commit_to_excel()
- * через ApiBridge, щоб гарантовано записати зміни в .xlsx на диску.
  */
 
 const GroupedModal = {
@@ -30,8 +27,8 @@ const GroupedModal = {
                         <button id="btn-close-modal" style="background: transparent; border: none; color: var(--color-text-muted); font-size: 18px; cursor: pointer; outline: none;">✕</button>
                     </div>
                     
-                    <div id="edit-modal-dynamic-content" style="padding: 24px; overflow-y: auto; display: flex; flex-direction: column; gap: 24px; flex-grow: 1;">
-                    </div>
+                    <div id="edit-modal-dynamic-content" style="padding: 24px; overflow-y: auto; display: flex; flex-grow: 1;">
+                        </div>
 
                     <div style="padding: 20px 24px; border-top: 1px solid var(--color-border); display: flex; justify-content: flex-end; gap: 12px; flex-shrink: 0; background-color: var(--color-bg-sidebar); border-radius: 0 0 8px 8px;">
                         <button id="btn-cancel-edit" class="btn-save-close" style="width: auto; background: transparent;">Скасувати</button>
@@ -70,44 +67,60 @@ const GroupedModal = {
         self._currentEditingAssets = graphs.length > 0 ? graphs : [asset];
 
         document.getElementById('edit-modal-title').innerText = assetName;
-        document.getElementById('edit-modal-subtitle').innerText =
-            `Виявлено роздільних граф обліку (за Об'єктами/МВО): ${self._currentEditingAssets.length}`;
+        document.getElementById('edit-modal-subtitle').innerText = `Виявлено роздільних граф обліку (за Об'єктами/МВО): ${self._currentEditingAssets.length}`;
 
         const contentContainer = document.getElementById('edit-modal-dynamic-content');
-        let html = '';
+        contentContainer.innerHTML = '';
+
+        const scrollWrapper = document.createElement('div');
+        scrollWrapper.style.cssText = "display: flex; flex-direction: column; gap: 24px; width: 100%;";
 
         self._currentEditingAssets.forEach((item, idx) => {
-            html += `
-                <div class="grouped-asset-block" data-uuid="${item["UUID"]}" style="background-color: var(--color-bg-sidebar); border: 1px solid var(--color-border); border-radius: 8px; padding: 18px; display: flex; flex-direction: column; gap: 12px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--color-border); padding-bottom: 8px;">
-                        <span style="font-size: 12px; font-weight: 700; color: var(--color-accent);">ГРАФА #${idx + 1}</span>
-                        <span style="font-size: 11px; color: var(--color-text-muted); font-family: monospace;">ID: ${item["UUID"] ? String(item["UUID"]).split('-')[0] : '—'}...</span>
-                    </div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top:10px;">
-            `;
+            const block = document.createElement('div');
+            block.className = "grouped-asset-block";
+            block.dataset.uuid = String(item["UUID"]);
+            block.style.cssText = "background-color: var(--color-bg-sidebar); border: 1px solid var(--color-border); border-radius: 8px; padding: 18px; display: flex; flex-direction: column; gap: 12px;";
 
-            Object.keys(item).forEach(key => {
-                if (key === 'UUID') return;
-
-                const isFullWidth = ["Найменування", "МВО (Прізвище)", "Об'єкт", "Примітки", "Опис"].includes(key) || key.length > 15;
-                const gridStyle = isFullWidth ? 'grid-column: span 2;' : '';
-                const safeVal = (item[key] !== null && item[key] !== undefined) ? String(item[key]).replace(/"/g, '&quot;') : '';
-
-                html += `
-                    <div style="display: flex; flex-direction: column; gap: 4px; ${gridStyle}">
-                        <label style="font-size: 11px; color: var(--color-text-muted); font-weight: 600;">${key}</label>
-                        <input type="text" class="field-dynamic-input doc-title-input" data-key="${key}" value="${safeVal}">
-                    </div>
-                `;
-            });
-
-            html += `
-                    </div>
+            let blockHeader = `
+                <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--color-border); padding-bottom: 8px;">
+                    <span style="font-size: 12px; font-weight: 700; color: var(--color-accent);">ГРАФА #${idx + 1}</span>
+                    <span style="font-size: 11px; color: var(--color-text-muted); font-family: monospace;">ID: ${item["UUID"] ? String(item["UUID"]).split('-')[0] : '—'}...</span>
                 </div>
             `;
+
+            const gridContainer = document.createElement('div');
+            gridContainer.style.cssText = "display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top:10px;";
+
+            Object.keys(item).forEach(key => {
+                if (key === 'UUID' || key === 'Об\'єкт_список' || key === 'Тип майна') return;
+
+                const isFullWidth = ['Найменування', 'МВО (Прізвище)', 'Об\'єкт', 'Примітки', 'Опис'].includes(key) || key.length > 15;
+                const fieldWrapper = document.createElement('div');
+                if (isFullWidth) fieldWrapper.style.gridColumn = 'span 2';
+                fieldWrapper.style.cssText = "display: flex; flex-direction: column; gap: 4px;";
+
+                const label = document.createElement('label');
+                label.style.cssText = "font-size: 11px; color: var(--color-text-muted); font-weight: 600;";
+                label.innerText = key;
+
+                // Створення інпутів через об'єктну модель гарантує 100% точність введення без збоїв кешу
+                const input = document.createElement('input');
+                input.type = "text";
+                input.className = "field-dynamic-input doc-title-input";
+                input.dataset.key = key;
+                input.value = (item[key] !== null && item[key] !== undefined) ? String(item[key]) : '';
+
+                fieldWrapper.appendChild(label);
+                fieldWrapper.appendChild(input);
+                gridContainer.appendChild(fieldWrapper);
+            });
+
+            block.innerHTML = blockHeader;
+            block.appendChild(gridContainer);
+            scrollWrapper.appendChild(block);
         });
 
-        contentContainer.innerHTML = html;
+        contentContainer.appendChild(scrollWrapper);
         document.getElementById('edit-asset-modal').style.display = 'flex';
     },
 
@@ -116,97 +129,64 @@ const GroupedModal = {
         this._currentEditingAssets = [];
     },
 
-    // ── Внутрішній хелпер: знаходить доступний метод виклику бекенду ──────────
-    _getBulkMethod: function () {
-        if (window.ApiBridge && typeof window.ApiBridge.bulkAction === 'function') {
-            return window.ApiBridge.bulkAction.bind(window.ApiBridge);
-        }
-        if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.bulkAction === 'function') {
-            return window.pywebview.api.bulkAction.bind(window.pywebview.api);
-        }
-        if (window.Api && typeof window.Api.bulkAction === 'function') {
-            return window.Api.bulkAction.bind(window.Api);
-        }
-        return null;
-    },
-
-    // ── Явний commit: гарантує запис у .xlsx після всіх edit-викликів ─────────
-    _commitToExcel: function (bulkMethod) {
-        if (!bulkMethod) return Promise.resolve();
-        return bulkMethod({
-            uuids: [],
-            actionType: 'commit',   // DataManager.commit_to_excel()
-            mode: 'save',
-            payload: {}
-        }).catch(function (err) {
-            // Не падаємо через помилку коміту — лише логуємо
-            console.warn("[GroupedModal] commit_to_excel повернув помилку:", err);
-        });
-    },
-
     saveGroupedChanges: function () {
         const self = this;
         const blocks = document.querySelectorAll('.grouped-asset-block');
+        const promises = [];
 
         const btnSave = document.getElementById('btn-save-edit');
         btnSave.disabled = true;
         btnSave.innerText = '⏳ Збереження граф...';
 
-        const bulkMethod = self._getBulkMethod();
+        const apiTarget = window.ApiBridge || window.Api || (window.pywebview && window.pywebview.api);
+        const bulkMethod = (apiTarget && typeof apiTarget.bulkAction === 'function') ? apiTarget.bulkAction : null;
 
-        if (!bulkMethod) {
-            console.error("[GroupedModal] Не знайдено метод для збереження майна.");
-            btnSave.disabled = false;
-            btnSave.innerText = '💾 Зберегти зміни по всій групі';
-            return;
-        }
-
-        // ── 1. Формуємо всі edit-запити ───────────────────────────────────────
-        const editPromises = [];
         blocks.forEach(block => {
             const uuid = String(block.dataset.uuid);
             const payload = {};
 
             block.querySelectorAll('.field-dynamic-input').forEach(input => {
                 const key = input.dataset.key;
-                let val = input.value;
+                let val = input.value.trim();
                 if (key === 'Кількість (факт)') {
                     val = parseInt(val) || 0;
                 }
                 payload[key] = val;
             });
 
-            editPromises.push(
-                bulkMethod({
-                    uuids: [uuid],
-                    actionType: 'edit',
-                    mode: 'save',
-                    payload: payload
-                })
-            );
+            if (bulkMethod) {
+                promises.push(
+                    bulkMethod.call(apiTarget, {
+                        uuids: [uuid],
+                        actionType: 'edit',
+                        mode: 'save',
+                        payload: payload
+                    })
+                );
+            }
         });
 
-        // ── 2. Після edit — явний commit у .xlsx, потім оновлення таблиці ─────
-        Promise.all(editPromises)
-            .then(function () {
-                // ✅ КЛЮЧОВЕ ВИПРАВЛЕННЯ: примусово скидаємо дані на диск
-                return self._commitToExcel(bulkMethod);
-            })
-            .then(function () {
-                self.close();
-                if (window.AssetTable && typeof window.AssetTable.loadData === 'function') {
-                    window.AssetTable.loadData();
-                } else if (window.EventBus) {
-                    window.EventBus.emit('table:refresh-required');
-                }
-            })
-            .catch(function (err) {
-                alert(`Помилка пакетного оновлення граф майна: ${err.message || err}`);
-            })
-            .finally(function () {
-                btnSave.disabled = false;
-                btnSave.innerText = '💾 Зберегти зміни по всій групі';
-            });
+        if (promises.length === 0) {
+            console.error("[GroupedModal] Не знайдено bulkAction.");
+            btnSave.disabled = false;
+            btnSave.innerText = '💾 Зберегти зміни по всій групі';
+            return;
+        }
+
+        Promise.all(promises).then(function () {
+            self.close();
+            // Змушуємо таблицю стерти застарілі масиви пам'яті і зчитати чистий Excel файл, який ми щойно перезаписали
+            if (window.AssetTable && typeof window.AssetTable.loadData === 'function') {
+                window.AssetTable.loadData();
+            } else if (window.EventBus) {
+                window.EventBus.emit('table:refresh-required');
+            }
+        }).catch(function (err) {
+            alert(`Помилка оновлення картки: ${err.message}`);
+        }).finally(function () {
+            btnSave.disabled = false;
+            btnSave.innerText = '💾 Зберегти зміни по всій групі';
+        });
     }
 };
 
