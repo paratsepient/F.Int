@@ -1,6 +1,6 @@
 /**
- * F.Int — Компонент таблиці активів (Asset Table) - DYNAMIC GRID EDITION
- * Автоматично генерує сітку стовпчиків на основі заголовків файлу Excel (A-X).
+ * F.Int — Компонент таблиці активів (Asset Table) - STRICT 7 COLUMNS EDITION
+ * Відображає чітко 7 визначених колонок з динамічними назвами з Налаштувань.
  */
 
 const AssetTable = {
@@ -10,8 +10,19 @@ const AssetTable = {
     _renderAnimationId: null,
     _eventsBound: false,
 
+    // Жорсткий порядок та внутрішні ключі колонок, які ми хочемо бачити
+    DISPLAY_COLUMNS: [
+        { key: "Найменування", width: "max-width: 300px;" },
+        { key: "Інв. / Номенкл. №", width: "max-width: 150px;" },
+        { key: "Тип", width: "max-width: 150px;" },
+        { key: "Одиниця виміру", width: "max-width: 100px;" },
+        { key: "Кількість (факт)", width: "max-width: 100px;" },
+        { key: "МВО (Прізвище)", width: "max-width: 180px;" },
+        { key: "Підрозділ", width: "max-width: 180px;" }
+    ],
+
     init: function () {
-        console.log("[AssetTable] Ініціалізація динамічного компонента таблиці...");
+        console.log("[AssetTable] Ініціалізація компонента таблиці (7 колонок)...");
         this.renderStructure();
         this.listenEvents();
         this.bindTableDelegation();
@@ -25,13 +36,9 @@ const AssetTable = {
         placeholder.innerHTML = `
             <style>
                 #asset-table-wrapper .td-checkbox, 
-                #asset-table-wrapper .th-checkbox {
-                    display: none;
-                }
+                #asset-table-wrapper .th-checkbox { display: none; }
                 #asset-table-wrapper.selection-active .td-checkbox, 
-                #asset-table-wrapper.selection-active .th-checkbox {
-                    display: table-cell;
-                }
+                #asset-table-wrapper.selection-active .th-checkbox { display: table-cell; }
             </style>
             
             <div id="asset-table-wrapper" class="table-container" style="background-color: var(--color-bg-sidebar); border: 1px solid var(--color-border); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; flex: 1; position: relative;">
@@ -43,11 +50,9 @@ const AssetTable = {
                 <div style="overflow-y: auto; overflow-x: auto; flex: 1;">
                     <table class="data-table" style="width: 100%; border-collapse: collapse; text-align: left;">
                         <thead style="position: sticky; top: 0; background-color: var(--color-bg-sidebar); z-index: 10; box-shadow: 0 1px 0 var(--color-border);">
-                            <tr id="table-header-row">
-                                </tr>
+                            <tr id="table-header-row"></tr>
                         </thead>
-                        <tbody id="table-body">
-                            </tbody>
+                        <tbody id="table-body"></tbody>
                     </table>
                 </div>
             </div>
@@ -60,16 +65,14 @@ const AssetTable = {
 
     loadData: function () {
         const self = this;
-        // ❗️ ВИПРАВЛЕНО: Тепер таблиця звертається до нового надійного ApiBridge ❗️
-        if (window.ApiBridge && typeof window.ApiBridge.getAssets === 'function') {
+        if (window.Api && typeof window.Api.get_assets === 'function') {
             document.getElementById('table-loading-overlay').style.display = 'block';
 
-            window.ApiBridge.getAssets().then(function (data) {
+            window.Api.get_assets().then(function (data) {
                 self._data = data || [];
                 self._filteredData = self._data;
 
                 if (window.EventBus) window.EventBus.emit('filters:count-updated', self._filteredData.length);
-
                 self.renderRowsProgressive();
 
                 if (window.FilterPanel && typeof window.FilterPanel.buildDynamicDirectories === 'function') {
@@ -79,31 +82,31 @@ const AssetTable = {
                 console.error("[AssetTable] Помилка завантаження даних:", err);
                 document.getElementById('table-loading-overlay').style.display = 'none';
             });
-        } else {
-            console.error("[AssetTable] КРИТИЧНА ПОМИЛКА: ApiBridge не знайдено. Перевірте завантаження api-bridge.js");
         }
     },
 
     /**
-     * Динамічна генерація заголовків на основі першого рядка Excel
+     * Рендерить заголовки таблиці, використовуючи кастомні назви з Налаштувань
      */
-    renderDynamicHeader: function (columns) {
+    renderDynamicHeader: function () {
         const theadRow = document.getElementById('table-header-row');
         if (!theadRow) return;
-
-        if (theadRow.dataset.headersRendered === 'true' && theadRow.children.length === columns.length + 2) return;
 
         let headerHtml = `
             <th class="th-checkbox" style="padding: 12px 16px; width: 40px; border-bottom: 1px solid var(--color-border);"><input type="checkbox" id="selectAll"></th>
             <th style="padding: 12px 16px; width: 50px; font-size: 12px; color: var(--color-text-muted); border-bottom: 1px solid var(--color-border);">№</th>
         `;
 
-        columns.forEach(col => {
-            headerHtml += `<th style="padding: 12px 16px; font-size: 12px; color: var(--color-text-muted); border-bottom: 1px solid var(--color-border); white-space: nowrap; font-weight: 700;">${col}</th>`;
+        // Отримуємо кастомні назви колонок із глобального стану Налаштувань
+        const customNames = (window.SettingsModule && window.SettingsModule.state && window.SettingsModule.state.columnNames) || {};
+
+        this.DISPLAY_COLUMNS.forEach(col => {
+            // Якщо користувач задав ім'я — беремо його, інакше беремо технічне
+            const displayName = customNames[col.key] || col.key;
+            headerHtml += `<th style="padding: 12px 16px; font-size: 12px; color: var(--color-text-muted); border-bottom: 1px solid var(--color-border); white-space: nowrap; font-weight: 700;">${displayName}</th>`;
         });
 
         theadRow.innerHTML = headerHtml;
-        theadRow.dataset.headersRendered = 'true';
 
         const selectAll = document.getElementById('selectAll');
         if (selectAll) {
@@ -132,19 +135,15 @@ const AssetTable = {
         tbody.innerHTML = '';
 
         if (this._filteredData.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="100" style="text-align: center; padding: 30px; color: var(--color-text-muted);">Майно не знайдено</td></tr>`;
-            overlay.style.display = 'none';
+            tbody.innerHTML = `<tr><td colspan="10" style="text-align: center; padding: 30px; color: var(--color-text-muted);">Майно не знайдено</td></tr>`;
+            if (overlay) overlay.style.display = 'none';
             return;
         }
 
-        overlay.style.display = 'block';
+        if (overlay) overlay.style.display = 'block';
 
-        // Визначаємо перелік стовпчиків
-        const sampleItem = this._filteredData[0];
-        const columns = Object.keys(sampleItem).filter(key => key !== 'UUID' && !key.endsWith('_список'));
-
-        // Малюємо верхній рядок заголовків
-        this.renderDynamicHeader(columns);
+        // Перемальовуємо заголовки на випадок, якщо назви змінились
+        this.renderDynamicHeader();
 
         const chunkSize = 50;
         let currentIndex = 0;
@@ -168,14 +167,17 @@ const AssetTable = {
                         <td style="padding: 12px 16px; font-size: 13px; color: var(--color-text-muted);">${i + 1}</td>
                 `;
 
-                // Циклом виводимо комірки для кожної з колонок
-                columns.forEach(col => {
-                    const val = row[col] !== undefined && row[col] !== null && row[col] !== "" ? row[col] : '—';
-                    const isName = col === 'Найменування';
-                    const isQty = col === 'Кількість (факт)';
-                    const isInv = col === 'Інв. / Номенкл. №' || col.toLowerCase().includes('№');
+                // Цикл ТІЛЬКИ по нашим 7 колонкам
+                self.DISPLAY_COLUMNS.forEach(col => {
+                    const valKey = col.key;
+                    // Перевіряємо чи є значення (іноді в Excel клітинка пуста)
+                    const val = row[valKey] !== undefined && row[valKey] !== null && row[valKey] !== "" ? row[valKey] : '—';
 
-                    let cellStyle = 'padding: 12px 16px; font-size: 13px; white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis; border-bottom: 1px solid var(--color-border);';
+                    const isName = valKey === 'Найменування';
+                    const isQty = valKey === 'Кількість (факт)';
+                    const isInv = valKey === 'Інв. / Номенкл. №';
+
+                    let cellStyle = `padding: 12px 16px; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-bottom: 1px solid var(--color-border); ${col.width}`;
                     if (isName) cellStyle += ' font-weight: 500; color: var(--color-text-main);';
                     if (isQty) cellStyle += ' font-weight: 600; color: var(--color-accent);';
                     if (isInv) cellStyle += ' font-family: monospace; letter-spacing: 0.02em;';
@@ -192,7 +194,7 @@ const AssetTable = {
             if (currentIndex < totalRows) {
                 self._renderAnimationId = requestAnimationFrame(renderChunk);
             } else {
-                overlay.style.display = 'none';
+                if (overlay) overlay.style.display = 'none';
             }
         }
 
@@ -202,7 +204,6 @@ const AssetTable = {
     listenEvents: function () {
         if (this._eventsBound) return;
         this._eventsBound = true;
-
         const self = this;
 
         if (window.EventBus) {
@@ -225,7 +226,6 @@ const AssetTable = {
                     wrapper.classList.remove('selection-active');
                     self._selectedUuids.clear();
                     self.notifySelection();
-
                     document.querySelectorAll('.row-checkbox').forEach(cb => cb.checked = false);
                     const selectAll = document.getElementById('selectAll');
                     if (selectAll) selectAll.checked = false;
@@ -301,10 +301,10 @@ const AssetTable = {
         const q = filters.searchQuery.toLowerCase();
 
         this._filteredData = this._data.filter(row => {
+            // Пошук працює по ВСІХ даних рядка (навіть прихованих колонках)
             const matchSearch = q === '' || Object.keys(row).some(key =>
                 key !== 'UUID' && row[key] && String(row[key]).toLowerCase().includes(q)
             );
-
             const matchType = filters.type === 'all' || row["Тип"] === filters.type;
             const matchMvo = filters.mvo === 'all' || row["МВО (Прізвище)"] === filters.mvo;
             const matchObject = filters.object === 'all' || row["Об'єкт"] === filters.object;
