@@ -50,63 +50,66 @@ const GroupedModal = {
         const self = this;
         if (window.EventBus) {
             window.EventBus.on('asset:open-grouped-modal', function (payload) {
-                if (payload && payload.name) {
-                    self.open(payload.name);
+                // Отримуємо повний об'єкт активу з усіма стовпцями B-X
+                if (payload && payload.asset) {
+                    self.open(payload.asset);
                 }
             });
         }
     },
 
-    open: function (assetName) {
+    open: function (asset) {
         const self = this;
 
-        if (window.Api && typeof window.Api.get_details_by_name === 'function') {
-            window.Api.get_details_by_name(assetName).then(function (graphs) {
-                self._currentEditingAssets = graphs;
+        // asset — повний об'єкт з усіма стовпцями B-X, переданий з AssetTable
+        if (!asset) return;
 
-                if (self._currentEditingAssets.length === 0) return;
+        // Шукаємо всі графи з тим самим найменуванням у вже завантажених даних таблиці
+        const assetName = asset["Найменування"] || '—';
+        const allData = (window.AssetTable && window.AssetTable._data) ? window.AssetTable._data : [asset];
+        const graphs = allData.filter(a => a["Найменування"] === assetName);
 
-                document.getElementById('edit-modal-title').innerText = assetName;
-                document.getElementById('edit-modal-subtitle').innerText = `Виявлено роздільних граф обліку (за Об'єктами/МВО): ${self._currentEditingAssets.length}`;
+        self._currentEditingAssets = graphs.length > 0 ? graphs : [asset];
 
-                const contentContainer = document.getElementById('edit-modal-dynamic-content');
-                let html = '';
+        document.getElementById('edit-modal-title').innerText = assetName;
+        document.getElementById('edit-modal-subtitle').innerText = `Виявлено роздільних граф обліку (за Об'єктами/МВО): ${self._currentEditingAssets.length}`;
 
-                self._currentEditingAssets.forEach((asset, idx) => {
-                    html += `
-                        <div class="grouped-asset-block" data-uuid="${asset["UUID"]}" style="background-color: var(--color-bg-sidebar); border: 1px solid var(--color-border); border-radius: 8px; padding: 18px; display: flex; flex-direction: column; gap: 12px;">
-                            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--color-border); padding-bottom: 8px;">
-                                <span style="font-size: 12px; font-weight: 700; color: var(--color-accent);">ГРАФА #${idx + 1}</span>
-                                <span style="font-size: 11px; color: var(--color-text-muted); font-family: monospace;">ID: ${asset["UUID"] ? asset["UUID"].split('-')[0] : '—'}...</span>
-                            </div>
-                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top:10px;">
-                    `;
+        const contentContainer = document.getElementById('edit-modal-dynamic-content');
+        let html = '';
 
-                    // ДИНАМІЧНА ГЕНЕРАЦІЯ ПОЛІВ ДЛЯ ВСІХ КОЛОНОК (A-X)
-                    Object.keys(asset).forEach(key => {
-                        if (key === 'UUID') return;
+        self._currentEditingAssets.forEach((item, idx) => {
+            html += `
+                <div class="grouped-asset-block" data-uuid="${item["UUID"]}" style="background-color: var(--color-bg-sidebar); border: 1px solid var(--color-border); border-radius: 8px; padding: 18px; display: flex; flex-direction: column; gap: 12px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--color-border); padding-bottom: 8px;">
+                        <span style="font-size: 12px; font-weight: 700; color: var(--color-accent);">ГРАФА #${idx + 1}</span>
+                        <span style="font-size: 11px; color: var(--color-text-muted); font-family: monospace;">ID: ${item["UUID"] ? item["UUID"].split('-')[0] : '—'}...</span>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top:10px;">
+            `;
 
-                        const isFullWidth = ['Найменування', 'МВО (Прізвище)', 'Об\'єкт', 'Примітки', 'Опис'].includes(key) || key.length > 15;
-                        const gridStyle = isFullWidth ? 'grid-column: span 2;' : '';
+            // ДИНАМІЧНА ГЕНЕРАЦІЯ ПОЛІВ ДЛЯ ВСІХ КОЛОНОК (A-X)
+            Object.keys(item).forEach(key => {
+                if (key === 'UUID') return;
 
-                        html += `
-                            <div style="display: flex; flex-direction: column; gap: 4px; ${gridStyle}">
-                                <label style="font-size: 11px; color: var(--color-text-muted); font-weight: 600;">${key}</label>
-                                <input type="text" class="field-dynamic-input doc-title-input" data-key="${key}" value="${asset[key] !== null && asset[key] !== undefined ? asset[key] : ''}">
-                            </div>
-                        `;
-                    });
+                const isFullWidth = ['Найменування', 'МВО (Прізвище)', 'Об\'єкт', 'Примітки', 'Опис'].includes(key) || key.length > 15;
+                const gridStyle = isFullWidth ? 'grid-column: span 2;' : '';
 
-                    html += `
-                            </div>
-                        </div>
-                    `;
-                });
+                html += `
+                    <div style="display: flex; flex-direction: column; gap: 4px; ${gridStyle}">
+                        <label style="font-size: 11px; color: var(--color-text-muted); font-weight: 600;">${key}</label>
+                        <input type="text" class="field-dynamic-input doc-title-input" data-key="${key}" value="${item[key] !== null && item[key] !== undefined ? item[key] : ''}">
+                    </div>
+                `;
+            });
 
-                contentContainer.innerHTML = html;
-                document.getElementById('edit-asset-modal').style.display = 'flex';
-            }).catch(err => console.error("Помилка отримання граф майна:", err));
-        }
+            html += `
+                    </div>
+                </div>
+            `;
+        });
+
+        contentContainer.innerHTML = html;
+        document.getElementById('edit-asset-modal').style.display = 'flex';
     },
 
     close: function () {

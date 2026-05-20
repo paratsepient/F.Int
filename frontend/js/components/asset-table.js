@@ -1,6 +1,5 @@
 /**
- * F.Int — Компонент таблиці активів (Asset Table) - STRICT 7 COLUMNS EDITION
- * Відображає чітко 7 визначених колонок з динамічними назвами з Налаштувань.
+ * F.Int — Компонент таблиці активів (Asset Table) - FIXED CLICKABLE
  */
 
 const AssetTable = {
@@ -10,7 +9,6 @@ const AssetTable = {
     _renderAnimationId: null,
     _eventsBound: false,
 
-    // Жорсткий порядок та внутрішні ключі колонок, які ми хочемо бачити
     DISPLAY_COLUMNS: [
         { key: "Найменування", width: "max-width: 300px;" },
         { key: "Інв. / Номенкл. №", width: "max-width: 150px;" },
@@ -18,11 +16,11 @@ const AssetTable = {
         { key: "Одиниця виміру", width: "max-width: 100px;" },
         { key: "Кількість (факт)", width: "max-width: 100px;" },
         { key: "МВО (Прізвище)", width: "max-width: 180px;" },
-        { key: "Підрозділ", width: "max-width: 180px;" }
+        { key: "Об'єкт", width: "max-width: 180px;" }
     ],
 
     init: function () {
-        console.log("[AssetTable] Ініціалізація компонента таблиці (7 колонок)...");
+        console.log("[AssetTable] Ініціалізація з виправленою клікабельністю...");
         this.renderStructure();
         this.listenEvents();
         this.bindTableDelegation();
@@ -65,10 +63,18 @@ const AssetTable = {
 
     loadData: function () {
         const self = this;
-        if (window.Api && typeof window.Api.get_assets === 'function') {
-            document.getElementById('table-loading-overlay').style.display = 'block';
 
-            window.Api.get_assets().then(function (data) {
+        let fetchMethod = null;
+        if (window.ApiBridge && typeof window.ApiBridge.get_assets === 'function') fetchMethod = () => window.ApiBridge.get_assets();
+        else if (window.ApiBridge && typeof window.ApiBridge.getAssets === 'function') fetchMethod = () => window.ApiBridge.getAssets();
+        else if (window.Api && typeof window.Api.get_assets === 'function') fetchMethod = () => window.Api.get_assets();
+        else if (window.pywebview && window.pywebview.api) fetchMethod = () => window.pywebview.api.get_assets();
+
+        if (fetchMethod) {
+            const overlay = document.getElementById('table-loading-overlay');
+            if (overlay) overlay.style.display = 'block';
+
+            fetchMethod().then(function (data) {
                 self._data = data || [];
                 self._filteredData = self._data;
 
@@ -80,14 +86,13 @@ const AssetTable = {
                 }
             }).catch(function (err) {
                 console.error("[AssetTable] Помилка завантаження даних:", err);
-                document.getElementById('table-loading-overlay').style.display = 'none';
+                if (overlay) overlay.style.display = 'none';
             });
+        } else {
+            console.error("[AssetTable] Не знайдено міст API (ApiBridge / pywebview) для завантаження майна.");
         }
     },
 
-    /**
-     * Рендерить заголовки таблиці, використовуючи кастомні назви з Налаштувань
-     */
     renderDynamicHeader: function () {
         const theadRow = document.getElementById('table-header-row');
         if (!theadRow) return;
@@ -97,12 +102,12 @@ const AssetTable = {
             <th style="padding: 12px 16px; width: 50px; font-size: 12px; color: var(--color-text-muted); border-bottom: 1px solid var(--color-border);">№</th>
         `;
 
-        // Отримуємо кастомні назви колонок із глобального стану Налаштувань
-        const customNames = (window.SettingsModule && window.SettingsModule.state && window.SettingsModule.state.columnNames) || {};
-
         this.DISPLAY_COLUMNS.forEach(col => {
-            // Якщо користувач задав ім'я — беремо його, інакше беремо технічне
-            const displayName = customNames[col.key] || col.key;
+            let displayName = col.key;
+            if (window.SettingsModule && typeof window.SettingsModule.getColumnName === 'function') {
+                displayName = window.SettingsModule.getColumnName(col.key);
+            }
+
             headerHtml += `<th style="padding: 12px 16px; font-size: 12px; color: var(--color-text-muted); border-bottom: 1px solid var(--color-border); white-space: nowrap; font-weight: 700;">${displayName}</th>`;
         });
 
@@ -113,7 +118,7 @@ const AssetTable = {
             selectAll.addEventListener('change', (e) => {
                 const isChecked = e.target.checked;
                 if (isChecked) {
-                    this._filteredData.forEach(row => this._selectedUuids.add(row["UUID"]));
+                    this._filteredData.forEach(row => this._selectedUuids.add(String(row["UUID"])));
                 } else {
                     this._selectedUuids.clear();
                 }
@@ -142,7 +147,6 @@ const AssetTable = {
 
         if (overlay) overlay.style.display = 'block';
 
-        // Перемальовуємо заголовки на випадок, якщо назви змінились
         this.renderDynamicHeader();
 
         const chunkSize = 50;
@@ -157,7 +161,7 @@ const AssetTable = {
 
             for (let i = currentIndex; i < end; i++) {
                 const row = dataToRender[i];
-                const uuid = row["UUID"];
+                const uuid = String(row["UUID"]); // Приводимо до рядка гарантовано
                 const isChecked = self._selectedUuids.has(uuid) ? 'checked' : '';
                 const rowBg = self._selectedUuids.has(uuid) ? 'background-color: var(--color-accent-subtle);' : '';
 
@@ -167,10 +171,8 @@ const AssetTable = {
                         <td style="padding: 12px 16px; font-size: 13px; color: var(--color-text-muted);">${i + 1}</td>
                 `;
 
-                // Цикл ТІЛЬКИ по нашим 7 колонкам
                 self.DISPLAY_COLUMNS.forEach(col => {
                     const valKey = col.key;
-                    // Перевіряємо чи є значення (іноді в Excel клітинка пуста)
                     const val = row[valKey] !== undefined && row[valKey] !== null && row[valKey] !== "" ? row[valKey] : '—';
 
                     const isName = valKey === 'Найменування';
@@ -243,7 +245,7 @@ const AssetTable = {
             const tr = e.target.closest('.asset-row');
             if (!tr) return;
 
-            const uuid = tr.dataset.uuid;
+            const uuid = String(tr.dataset.uuid); // Строга типізація
 
             if (e.target.classList.contains('row-checkbox')) {
                 const checkbox = e.target;
@@ -267,10 +269,14 @@ const AssetTable = {
                 return;
             }
 
-            const match = self._data.find(a => a["UUID"] === uuid);
-            if (match && match["Найменування"]) {
+            // ПРАВКА: Пошук повного об'єкта в _data (де є всі дані з B по X)
+            const match = self._data.find(a => String(a["UUID"]) === uuid);
+
+            if (match) {
+                console.log("[AssetTable] Клік по майну, відкриваємо повну інфо:", match);
+                // Відправляємо весь об'єкт 'match', щоб модалка отримала доступ до всіх стовпців
                 window.EventBus.emit('asset:open-grouped-modal', {
-                    name: match["Найменування"]
+                    asset: match
                 });
             }
         });
@@ -278,7 +284,7 @@ const AssetTable = {
         tbody.addEventListener('change', function (e) {
             if (e.target.classList.contains('row-checkbox')) {
                 const tr = e.target.closest('.asset-row');
-                const uuid = tr.dataset.uuid;
+                const uuid = String(tr.dataset.uuid);
                 if (e.target.checked) {
                     self._selectedUuids.add(uuid);
                     tr.style.backgroundColor = 'var(--color-accent-subtle)';
@@ -298,16 +304,26 @@ const AssetTable = {
         const selectAll = document.getElementById('selectAll');
         if (selectAll) selectAll.checked = false;
 
-        const q = filters.searchQuery.toLowerCase();
+        const q = (filters.searchQuery || '').toLowerCase();
 
         this._filteredData = this._data.filter(row => {
-            // Пошук працює по ВСІХ даних рядка (навіть прихованих колонках)
             const matchSearch = q === '' || Object.keys(row).some(key =>
                 key !== 'UUID' && row[key] && String(row[key]).toLowerCase().includes(q)
             );
             const matchType = filters.type === 'all' || row["Тип"] === filters.type;
             const matchMvo = filters.mvo === 'all' || row["МВО (Прізвище)"] === filters.mvo;
-            const matchObject = filters.object === 'all' || row["Об'єкт"] === filters.object;
+
+            // ПРАВКА №2: Коректне фільтрування майна, яке знаходиться на кількох об'єктах одразу
+            let matchObject = false;
+            if (filters.object === 'all') {
+                matchObject = true;
+            } else if (Array.isArray(row["Об'єкт_список"]) && row["Об'єкт_список"].length > 0) {
+                // Якщо є масив розбитих об'єктів (через ;) — шукаємо точний збіг у цьому списку
+                matchObject = row["Об'єкт_список"].includes(filters.object);
+            } else {
+                // Фолбек (для старих записів без ;)
+                matchObject = row["Об'єкт"] === filters.object;
+            }
 
             return matchSearch && matchType && matchMvo && matchObject;
         });
@@ -319,10 +335,7 @@ const AssetTable = {
     notifySelection: function () {
         const uuids = Array.from(this._selectedUuids);
         if (window.EventBus) {
-            window.EventBus.emit('assets:selected', {
-                uuids: uuids,
-                count: uuids.length
-            });
+            window.EventBus.emit('assets:selected', { uuids: uuids, count: uuids.length });
         }
     }
 };
