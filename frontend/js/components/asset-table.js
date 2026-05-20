@@ -1,20 +1,20 @@
 /**
- * F.Int — Компонент таблиці активів (Asset Table) - HIGH PERFORMANCE
- * Оптимізовано для великих масивів даних (800+ позицій).
- * Використовує Event Delegation та Progressive Rendering (requestAnimationFrame).
+ * F.Int — Компонент таблиці активів (Asset Table) - DYNAMIC GRID EDITION
+ * Автоматично генерує сітку стовпчиків на основі заголовків файлу Excel (A-X).
  */
 
 const AssetTable = {
     _data: [],
     _filteredData: [],
     _selectedUuids: new Set(),
-    _renderAnimationId: null, // ID для зупинки попереднього рендеру
+    _renderAnimationId: null,
+    _eventsBound: false,
 
     init: function () {
-        console.log("[AssetTable] Ініціалізація високопродуктивного компонента таблиці...");
+        console.log("[AssetTable] Ініціалізація динамічного компонента таблиці...");
         this.renderStructure();
-        this.bindEvents();
-        this.bindTableDelegation(); // Єдиний слухач для всієї таблиці
+        this.listenEvents();
+        this.bindTableDelegation();
         this.loadData();
     },
 
@@ -23,25 +23,28 @@ const AssetTable = {
         if (!placeholder) return;
 
         placeholder.innerHTML = `
-            <div class="table-container" style="background-color: var(--color-bg-sidebar); border: 1px solid var(--color-border); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; flex: 1; position: relative;">
+            <style>
+                #asset-table-wrapper .td-checkbox, 
+                #asset-table-wrapper .th-checkbox {
+                    display: none;
+                }
+                #asset-table-wrapper.selection-active .td-checkbox, 
+                #asset-table-wrapper.selection-active .th-checkbox {
+                    display: table-cell;
+                }
+            </style>
+            
+            <div id="asset-table-wrapper" class="table-container" style="background-color: var(--color-bg-sidebar); border: 1px solid var(--color-border); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; flex: 1; position: relative;">
                 
                 <div id="table-loading-overlay" style="display: none; position: absolute; top: 45px; left: 0; right: 0; background: rgba(255,255,255,0.8); z-index: 5; text-align: center; padding: 10px; font-size: 12px; color: var(--color-accent); font-weight: 600; backdrop-filter: blur(2px);">
                     ⏳ Рендеринг даних...
                 </div>
 
-                <div style="overflow-y: auto; flex: 1;">
+                <div style="overflow-y: auto; overflow-x: auto; flex: 1;">
                     <table class="data-table" style="width: 100%; border-collapse: collapse; text-align: left;">
                         <thead style="position: sticky; top: 0; background-color: var(--color-bg-sidebar); z-index: 10; box-shadow: 0 1px 0 var(--color-border);">
-                            <tr>
-                                <th style="padding: 12px 16px; width: 40px; border-bottom: 1px solid var(--color-border);"><input type="checkbox" id="selectAll"></th>
-                                <th style="padding: 12px 16px; width: 50px; font-size: 12px; color: var(--color-text-muted); border-bottom: 1px solid var(--color-border);">№</th>
-                                <th style="padding: 12px 16px; font-size: 12px; color: var(--color-text-muted); border-bottom: 1px solid var(--color-border);">Тип майна</th>
-                                <th style="padding: 12px 16px; font-size: 12px; color: var(--color-text-muted); border-bottom: 1px solid var(--color-border);">Найменування</th>
-                                <th style="padding: 12px 16px; font-size: 12px; color: var(--color-text-muted); border-bottom: 1px solid var(--color-border);">Інв. / Ном. №</th>
-                                <th style="padding: 12px 16px; font-size: 12px; color: var(--color-text-muted); border-bottom: 1px solid var(--color-border);">Од. вим.</th>
-                                <th style="padding: 12px 16px; font-size: 12px; color: var(--color-text-muted); border-bottom: 1px solid var(--color-border);">К-сть</th>
-                                <th style="padding: 12px 16px; font-size: 12px; color: var(--color-text-muted); border-bottom: 1px solid var(--color-border);">Об'єкт</th>
-                            </tr>
+                            <tr id="table-header-row">
+                                </tr>
                         </thead>
                         <tbody id="table-body">
                             </tbody>
@@ -49,6 +52,10 @@ const AssetTable = {
                 </div>
             </div>
         `;
+
+        if (window.FilterPanel && window.FilterPanel._selectionMode) {
+            document.getElementById('asset-table-wrapper').classList.add('selection-active');
+        }
     },
 
     loadData: function () {
@@ -59,7 +66,10 @@ const AssetTable = {
             window.Api.get_assets().then(function (data) {
                 self._data = data || [];
                 self._filteredData = self._data;
-                self.renderRowsProgressive(); // Запускаємо порційний рендер
+
+                if (window.EventBus) window.EventBus.emit('filters:count-updated', self._filteredData.length);
+
+                self.renderRowsProgressive();
 
                 if (window.FilterPanel && typeof window.FilterPanel.buildDynamicDirectories === 'function') {
                     window.FilterPanel.buildDynamicDirectories();
@@ -72,30 +82,68 @@ const AssetTable = {
     },
 
     /**
-     * ПРОГРЕСИВНИЙ РЕНДЕР (Chunking)
-     * Малює по 50 рядків за один кадр анімації. Не блокує інтерфейс!
+     * Динамічна генерація заголовків на основі першого рядка Excel
      */
+    renderDynamicHeader: function (columns) {
+        const theadRow = document.getElementById('table-header-row');
+        if (!theadRow) return;
+
+        if (theadRow.dataset.headersRendered === 'true' && theadRow.children.length === columns.length + 2) return;
+
+        let headerHtml = `
+            <th class="th-checkbox" style="padding: 12px 16px; width: 40px; border-bottom: 1px solid var(--color-border);"><input type="checkbox" id="selectAll"></th>
+            <th style="padding: 12px 16px; width: 50px; font-size: 12px; color: var(--color-text-muted); border-bottom: 1px solid var(--color-border);">№</th>
+        `;
+
+        columns.forEach(col => {
+            headerHtml += `<th style="padding: 12px 16px; font-size: 12px; color: var(--color-text-muted); border-bottom: 1px solid var(--color-border); white-space: nowrap; font-weight: 700;">${col}</th>`;
+        });
+
+        theadRow.innerHTML = headerHtml;
+        theadRow.dataset.headersRendered = 'true';
+
+        const selectAll = document.getElementById('selectAll');
+        if (selectAll) {
+            selectAll.addEventListener('change', (e) => {
+                const isChecked = e.target.checked;
+                if (isChecked) {
+                    this._filteredData.forEach(row => this._selectedUuids.add(row["UUID"]));
+                } else {
+                    this._selectedUuids.clear();
+                }
+                this.renderRowsProgressive();
+                this.notifySelection();
+            });
+        }
+    },
+
     renderRowsProgressive: function () {
         const tbody = document.getElementById('table-body');
         const overlay = document.getElementById('table-loading-overlay');
         if (!tbody) return;
 
-        // Зупиняємо попередній рендер, якщо користувач швидко змінив фільтри
         if (this._renderAnimationId) {
             cancelAnimationFrame(this._renderAnimationId);
         }
 
-        tbody.innerHTML = ''; // Очищуємо таблицю
+        tbody.innerHTML = '';
 
         if (this._filteredData.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 30px; color: var(--color-text-muted);">Майно не знайдено</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="100" style="text-align: center; padding: 30px; color: var(--color-text-muted);">Майно не знайдено</td></tr>`;
             overlay.style.display = 'none';
             return;
         }
 
         overlay.style.display = 'block';
 
-        const chunkSize = 50; // Кількість рядків за один прохід (налаштовується)
+        // Визначаємо перелік стовпчиків
+        const sampleItem = this._filteredData[0];
+        const columns = Object.keys(sampleItem).filter(key => key !== 'UUID');
+
+        // Малюємо верхній рядок заголовків
+        this.renderDynamicHeader(columns);
+
+        const chunkSize = 50;
         let currentIndex = 0;
         const totalRows = this._filteredData.length;
         const dataToRender = this._filteredData;
@@ -115,33 +163,43 @@ const AssetTable = {
                     <tr class="asset-row" data-uuid="${uuid}" style="cursor: pointer; border-bottom: 1px solid var(--color-border); transition: background-color 0.1s; ${rowBg}">
                         <td class="td-checkbox" style="padding: 12px 16px;"><input type="checkbox" class="row-checkbox" value="${uuid}" ${isChecked}></td>
                         <td style="padding: 12px 16px; font-size: 13px; color: var(--color-text-muted);">${i + 1}</td>
-                        <td style="padding: 12px 16px; font-size: 13px;">${row["Тип"] || '—'}</td>
-                        <td style="padding: 12px 16px; font-size: 13px; font-weight: 500;">${row["Найменування"] || '—'}</td>
-                        <td style="padding: 12px 16px; font-size: 13px; font-family: monospace;">${row["Інв. / Номенкл. №"] || '—'}</td>
-                        <td style="padding: 12px 16px; font-size: 13px;">${row["Одиниця виміру"] || 'шт'}</td>
-                        <td style="padding: 12px 16px; font-size: 13px; font-weight: 600;">${row["Кількість (факт)"] || 0}</td>
-                        <td style="padding: 12px 16px; font-size: 13px;">${row["Об'єкт"] || '—'}</td>
-                    </tr>
                 `;
+
+                // Циклом виводимо комірки для кожної з 24 колонок (A-X)
+                columns.forEach(col => {
+                    const val = row[col] !== undefined && row[col] !== null ? row[col] : '—';
+                    const isName = col === 'Найменування';
+                    const isQty = col === 'Кількість (факт)';
+                    const isInv = col === 'Інв. / Номенкл. №' || col.toLowerCase().includes('№');
+
+                    let cellStyle = 'padding: 12px 16px; font-size: 13px; white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis; border-bottom: 1px solid var(--color-border);';
+                    if (isName) cellStyle += ' font-weight: 500; color: var(--color-text-main);';
+                    if (isQty) cellStyle += ' font-weight: 600; color: var(--color-accent);';
+                    if (isInv) cellStyle += ' font-family: monospace; letter-spacing: 0.02em;';
+
+                    htmlChunk += `<td style="${cellStyle}" title="${val}">${val}</td>`;
+                });
+
+                htmlChunk += `</tr>`;
             }
 
             tbody.insertAdjacentHTML('beforeend', htmlChunk);
             currentIndex = end;
 
             if (currentIndex < totalRows) {
-                // Якщо є ще рядки — малюємо їх у наступному кадрі
                 self._renderAnimationId = requestAnimationFrame(renderChunk);
             } else {
-                // Рендер завершено
                 overlay.style.display = 'none';
             }
         }
 
-        // Запускаємо першу порцію
         this._renderAnimationId = requestAnimationFrame(renderChunk);
     },
 
-    bindEvents: function () {
+    listenEvents: function () {
+        if (this._eventsBound) return;
+        this._eventsBound = true;
+
         const self = this;
 
         if (window.EventBus) {
@@ -153,28 +211,27 @@ const AssetTable = {
                 if (window.FilterPanel) window.FilterPanel.buildDynamicDirectories();
                 self.renderRowsProgressive();
             });
-        }
 
-        // Обробка масового виділення (Select All)
-        const selectAll = document.getElementById('selectAll');
-        if (selectAll) {
-            selectAll.addEventListener('change', function (e) {
-                const isChecked = e.target.checked;
-                if (isChecked) {
-                    self._filteredData.forEach(row => self._selectedUuids.add(row["UUID"]));
+            window.EventBus.on('selection:toggle', function (isActive) {
+                const wrapper = document.getElementById('asset-table-wrapper');
+                if (!wrapper) return;
+
+                if (isActive) {
+                    wrapper.classList.add('selection-active');
                 } else {
+                    wrapper.classList.remove('selection-active');
                     self._selectedUuids.clear();
+                    self.notifySelection();
+
+                    document.querySelectorAll('.row-checkbox').forEach(cb => cb.checked = false);
+                    const selectAll = document.getElementById('selectAll');
+                    if (selectAll) selectAll.checked = false;
+                    document.querySelectorAll('.asset-row').forEach(row => row.style.backgroundColor = '');
                 }
-                self.renderRowsProgressive();
-                self.notifySelection();
             });
         }
     },
 
-    /**
-     * ДЕЛЕГУВАННЯ ПОДІЙ (Event Delegation)
-     * Один єдиний слухач для всіх 800+ рядків та чекбоксів!
-     */
     bindTableDelegation: function () {
         const tbody = document.getElementById('table-body');
         const self = this;
@@ -185,7 +242,6 @@ const AssetTable = {
 
             const uuid = tr.dataset.uuid;
 
-            // Якщо клік був по чекбоксу
             if (e.target.classList.contains('row-checkbox')) {
                 const checkbox = e.target;
                 if (checkbox.checked) {
@@ -199,16 +255,15 @@ const AssetTable = {
                 return;
             }
 
-            // Якщо клік був по самій комірці чекбокса (але не по квадратику)
-            if (e.target.closest('.td-checkbox')) {
+            if (window.FilterPanel && window.FilterPanel._selectionMode) {
                 const checkbox = tr.querySelector('.row-checkbox');
-                checkbox.checked = !checkbox.checked;
-                // Запускаємо подію вручну
-                checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+                if (checkbox) {
+                    checkbox.checked = !checkbox.checked;
+                    checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+                }
                 return;
             }
 
-            // Якщо клік був по рядку (відкриття модалки)
             const match = self._data.find(a => a["UUID"] === uuid);
             if (match && match["Найменування"]) {
                 window.EventBus.emit('asset:open-grouped-modal', {
@@ -217,7 +272,6 @@ const AssetTable = {
             }
         });
 
-        // Слухаємо 'change', який ми могли викликати вище
         tbody.addEventListener('change', function (e) {
             if (e.target.classList.contains('row-checkbox')) {
                 const tr = e.target.closest('.asset-row');
@@ -238,23 +292,25 @@ const AssetTable = {
         this._selectedUuids.clear();
         this.notifySelection();
 
-        // Скидаємо чекбокс Select All
         const selectAll = document.getElementById('selectAll');
         if (selectAll) selectAll.checked = false;
 
         const q = filters.searchQuery.toLowerCase();
 
         this._filteredData = this._data.filter(row => {
-            const matchSearch = q === '' ||
-                (row["Найменування"] && row["Найменування"].toLowerCase().includes(q)) ||
-                (row["Інв. / Номенкл. №"] && String(row["Інв. / Номенкл. №"]).toLowerCase().includes(q));
+            // [УНІВЕРСАЛЬНИЙ ПОШУК] Перевіряє збіг тексту в абсолютно ВСІХ 24 колонках з Excel
+            const matchSearch = q === '' || Object.keys(row).some(key =>
+                key !== 'UUID' && row[key] && String(row[key]).toLowerCase().includes(q)
+            );
 
+            const matchType = filters.type === 'all' || row["Тип"] === filters.type;
             const matchMvo = filters.mvo === 'all' || row["МВО (Прізвище)"] === filters.mvo;
             const matchObject = filters.object === 'all' || row["Об'єкт"] === filters.object;
 
-            return matchSearch && matchMvo && matchObject;
+            return matchSearch && matchType && matchMvo && matchObject;
         });
 
+        if (window.EventBus) window.EventBus.emit('filters:count-updated', this._filteredData.length);
         this.renderRowsProgressive();
     },
 

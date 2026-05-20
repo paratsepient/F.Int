@@ -1,5 +1,6 @@
 /**
  * F.Int — Ізольований модуль згрупованої картки майна (Grouped Modal Component)
+ * Автоматично адаптує поля форми під усі стовпчики Excel (A-X).
  */
 
 const GroupedModal = {
@@ -11,16 +12,13 @@ const GroupedModal = {
         this.listenEvents();
     },
 
-    /**
-     * Створює приховану структуру модалки у самому низу document.body
-     */
     injectModalStructure: function () {
         const existingModal = document.getElementById('edit-asset-modal');
         if (existingModal) existingModal.remove();
 
         const modalHtml = `
             <div id="edit-asset-modal" class="modal-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center; backdrop-filter: blur(2px);">
-                <div class="modal-content" style="background-color: var(--color-bg-main); border: 1px solid var(--color-border); border-radius: 8px; width: 640px; max-height: 85vh; display: flex; flex-direction: column; box-shadow: 0 10px 25px rgba(0,0,0,0.2); animation: fadeIn 0.2s;">
+                <div class="modal-content" style="background-color: var(--color-bg-main); border: 1px solid var(--color-border); border-radius: 8px; width: 680px; max-height: 85vh; display: flex; flex-direction: column; box-shadow: 0 10px 25px rgba(0,0,0,0.2); animation: fadeIn 0.2s;">
                     
                     <div style="padding: 20px 24px; border-bottom: 1px solid var(--color-border); display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;">
                         <div>
@@ -30,7 +28,7 @@ const GroupedModal = {
                         <button id="btn-close-modal" style="background: transparent; border: none; color: var(--color-text-muted); font-size: 18px; cursor: pointer; outline: none;">✕</button>
                     </div>
                     
-                    <div id="edit-modal-dynamic-content" style="padding: 24px; overflow-y: auto; display: flex; flex-direction: column; gap: 20px; flex-grow: 1;">
+                    <div id="edit-modal-dynamic-content" style="padding: 24px; overflow-y: auto; display: flex; flex-direction: column; gap: 24px; flex-grow: 1;">
                         </div>
 
                     <div style="padding: 20px 24px; border-top: 1px solid var(--color-border); display: flex; justify-content: flex-end; gap: 12px; flex-shrink: 0; background-color: var(--color-bg-sidebar); border-radius: 0 0 8px 8px;">
@@ -82,34 +80,24 @@ const GroupedModal = {
                                 <span style="font-size: 11px; color: var(--color-text-muted); font-family: monospace;">ID: ${asset["UUID"] ? asset["UUID"].split('-')[0] : '—'}...</span>
                             </div>
                             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top:10px;">
-                                <div style="grid-column: span 2; display: flex; flex-direction: column; gap: 4px;">
-                                    <label style="font-size: 11px; color: var(--color-text-muted);">Найменування</label>
-                                    <input type="text" class="field-edit-name doc-title-input" value="${asset["Найменування"] || ''}">
-                                </div>
-                                <div style="display: flex; flex-direction: column; gap: 4px;">
-                                    <label style="font-size: 11px; color: var(--color-text-muted);">Тип майна</label>
-                                    <input type="text" class="field-edit-type doc-title-input" value="${asset["Тип"] || ''}">
-                                </div>
-                                <div style="display: flex; flex-direction: column; gap: 4px;">
-                                    <label style="font-size: 11px; color: var(--color-text-muted);">Інв. №</label>
-                                    <input type="text" class="field-edit-inv doc-title-input" value="${asset["Інв. / Номенкл. №"] || ''}">
-                                </div>
-                                <div style="display: flex; flex-direction: column; gap: 4px;">
-                                    <label style="font-size: 11px; color: var(--color-text-muted);">Кількість (факт)</label>
-                                    <input type="number" class="field-edit-qty doc-title-input" value="${asset["Кількість (факт)"] || 0}">
-                                </div>
-                                <div style="display: flex; flex-direction: column; gap: 4px;">
-                                    <label style="font-size: 11px; color: var(--color-text-muted);">Од. вим.</label>
-                                    <input type="text" class="field-edit-unit doc-title-input" value="${asset["Одиниця виміру"] || 'шт'}">
-                                </div>
-                                <div style="grid-column: span 2; display: flex; flex-direction: column; gap: 4px;">
-                                    <label style="font-size: 11px; color: var(--color-text-muted);">МВО (Прізвище)</label>
-                                    <input type="text" class="field-edit-mvo doc-title-input" value="${asset["МВО (Прізвище)"] || ''}">
-                                </div>
-                                <div style="grid-column: span 2; display: flex; flex-direction: column; gap: 4px;">
-                                    <label style="font-size: 11px; color: var(--color-text-muted);">Об'єкт / Локація</label>
-                                    <input type="text" class="field-edit-obj doc-title-input" value="${asset["Об'єкт"] || ''}">
-                                </div>
+                    `;
+
+                    // ДИНАМІЧНА ГЕНЕРАЦІЯ ПОЛІВ ДЛЯ ВСІХ КОЛОНОК (A-X)
+                    Object.keys(asset).forEach(key => {
+                        if (key === 'UUID') return;
+
+                        const isFullWidth = ['Найменування', 'МВО (Прізвище)', 'Об\'єкт', 'Примітки', 'Опис'].includes(key) || key.length > 15;
+                        const gridStyle = isFullWidth ? 'grid-column: span 2;' : '';
+
+                        html += `
+                            <div style="display: flex; flex-direction: column; gap: 4px; ${gridStyle}">
+                                <label style="font-size: 11px; color: var(--color-text-muted); font-weight: 600;">${key}</label>
+                                <input type="text" class="field-dynamic-input doc-title-input" data-key="${key}" value="${asset[key] !== null && asset[key] !== undefined ? asset[key] : ''}">
+                            </div>
+                        `;
+                    });
+
+                    html += `
                             </div>
                         </div>
                     `;
@@ -133,19 +121,21 @@ const GroupedModal = {
 
         const btnSave = document.getElementById('btn-save-edit');
         btnSave.disabled = true;
-        btnSave.innerText = '⏳ Збереження граф баз...';
+        btnSave.innerText = '⏳ Збереження граф...';
 
         blocks.forEach(block => {
             const uuid = block.dataset.uuid;
-            const payload = {
-                "Найменування": block.querySelector('.field-edit-name').value,
-                "Тип": block.querySelector('.field-edit-type').value,
-                "Інв. / Номенкл. №": block.querySelector('.field-edit-inv').value,
-                "Кількість (факт)": parseInt(block.querySelector('.field-edit-qty').value) || 0,
-                "Одиниця виміру": block.querySelector('.field-edit-unit').value,
-                "МВО (Прізвище)": block.querySelector('.field-edit-mvo').value,
-                "Об'єкт": block.querySelector('.field-edit-obj').value
-            };
+            const payload = {};
+
+            // Динамічно зчитуємо значення зі всіх інпутів
+            block.querySelectorAll('.field-dynamic-input').forEach(input => {
+                const key = input.dataset.key;
+                let val = input.value;
+                if (key === 'Кількість (факт)') {
+                    val = parseInt(val) || 0;
+                }
+                payload[key] = val;
+            });
 
             if (window.Api && typeof window.Api.bulkAction === 'function') {
                 promises.push(
