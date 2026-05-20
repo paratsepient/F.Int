@@ -166,7 +166,7 @@ const AssetTable = {
                 const rowBg = self._selectedUuids.has(uuid) ? 'background-color: var(--color-accent-subtle);' : '';
 
                 htmlChunk += `
-                    <tr class="asset-row" data-uuid="${uuid}" style="cursor: pointer; border-bottom: 1px solid var(--color-border); transition: background-color 0.1s; ${rowBg}">
+                    <tr class="asset-row" data-uuid="${uuid}" style="cursor: pointer; border-bottom: 1px solid var(--color-border); position: relative; transition: background-color 0.1s; ${rowBg}">
                         <td class="td-checkbox" style="padding: 12px 16px;"><input type="checkbox" class="row-checkbox" value="${uuid}" ${isChecked}></td>
                         <td style="padding: 12px 16px; font-size: 13px; color: var(--color-text-muted);">${i + 1}</td>
                 `;
@@ -274,10 +274,12 @@ const AssetTable = {
 
             if (match) {
                 console.log("[AssetTable] Клік по майну, відкриваємо повну інфо:", match);
-                // Відправляємо весь об'єкт 'match', щоб модалка отримала доступ до всіх стовпців
-                window.EventBus.emit('asset:open-grouped-modal', {
-                    asset: match
-                });
+                // Прямий, гарантований виклик модального вікна
+                if (window.GroupedModal) {
+                    window.GroupedModal.open(match);
+                } else {
+                    console.error("[AssetTable] Помилка: GroupedModal не знайдено!");
+                }
             }
         });
 

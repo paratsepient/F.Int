@@ -5,37 +5,21 @@
 const GroupedModal = {
     currentAsset: null,
 
-    /**
-     * Універсальний метод ініціалізації картки.
-     * ВИПРАВЛЕНО: захист від виклику без аргументів та від передачі click-події замість даних.
-     */
     init(dataOrEvent) {
-        // ВИПРАВЛЕННЯ 1: якщо викликано без аргументів — мовчки виходимо (не засмічуємо консоль помилкою)
         if (dataOrEvent === undefined || dataOrEvent === null) {
-            console.warn("[GroupedModal] init() викликано без аргументів — ігноруємо.");
             return;
         }
-
-        console.log("[GroupedModal] init() отримав:", typeof dataOrEvent, dataOrEvent);
 
         let assetData = null;
 
         if (dataOrEvent && dataOrEvent.detail) {
-            // Прийшла CustomEvent з EventBus
+            // Прийшла CustomEvent з DOM (фолбек)
             assetData = dataOrEvent.detail.asset || dataOrEvent.detail;
         } else if (dataOrEvent instanceof Event || (dataOrEvent && dataOrEvent.target && dataOrEvent.type)) {
-            // ВИПРАВЛЕННЯ 2: прийшов звичайний DOM-івент (click) — це помилка виклику в asset-table.js
-            // Намагаємось дістати дані з data-атрибуту або currentAsset
-            console.error(
-                "[GroupedModal] УВАГА: передано DOM-подію замість об'єкта даних!\n" +
-                "Виправте asset-table.js: замість GroupedModal.init(event) використовуйте GroupedModal.open(assetObject).\n" +
-                "Отримана подія:", dataOrEvent
-            );
-            // Запасний варіант — беремо останній відомий asset
             assetData = this.currentAsset;
         } else if (dataOrEvent && typeof dataOrEvent === 'object' && !Array.isArray(dataOrEvent)) {
-            // Чистий JS-об'єкт з даними майна
-            assetData = dataOrEvent;
+            // ВИПРАВЛЕННЯ: Коректно витягуємо дані з об'єкта EventBus ({ asset: match })
+            assetData = dataOrEvent.asset || dataOrEvent;
         }
 
         if (!assetData || typeof assetData !== 'object') {
@@ -46,7 +30,6 @@ const GroupedModal = {
         this.currentAsset = assetData;
         console.log("[GroupedModal] Рендеримо картку для:", assetData);
 
-        // Шукаємо або створюємо overlay
         let modalOverlay = document.getElementById('grouped-modal-overlay');
         if (!modalOverlay) {
             modalOverlay = document.createElement('div');
@@ -64,7 +47,6 @@ const GroupedModal = {
             || assetData["Кількість"]
             || '0';
 
-        // Екранування значень для безпечної вставки в HTML
         const esc = (val) => String(val ?? '').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
         modalOverlay.innerHTML = `
@@ -120,7 +102,6 @@ const GroupedModal = {
         this.initEvents();
     },
 
-    // Псевдоніми для сумісності з asset-table.js
     open(data) { this.init(data); },
     show(data) { this.init(data); },
 
@@ -154,7 +135,6 @@ const GroupedModal = {
             modalOverlay.innerHTML = '';
         }
         this.currentAsset = null;
-        console.log("[GroupedModal] Закрито.");
     },
 
     async handleSave() {
@@ -164,7 +144,6 @@ const GroupedModal = {
 
         const assetUuid = this.currentAsset?.["UUID"] ? String(this.currentAsset["UUID"]) : null;
         if (!assetUuid) {
-            console.error("[GroupedModal] UUID відсутній у:", this.currentAsset);
             alert("Помилка: не вдалося знайти ідентифікатор рядка (UUID).");
             return;
         }
@@ -174,13 +153,13 @@ const GroupedModal = {
             payload[input.getAttribute('data-field')] = input.value.trim();
         });
 
-        // Дублюємо для сумісності з Python-бекендом
+        // Дублюємо для сумісності
         payload["Тип"] = payload["Тип майна"];
         payload["Інв. / Номенкл. №"] = payload["Інвентарний / Номенклатурний №"];
 
         const apiBridge = window.ApiBridge || window.pywebview?.api || window.Api;
         if (!apiBridge) {
-            alert("Помилка: міст зв'язку з Python не знайдено (ApiBridge/pywebview.api).");
+            alert("Помилка: міст зв'язку з Python не знайдено.");
             return;
         }
 
@@ -188,23 +167,28 @@ const GroupedModal = {
         try {
             if (saveBtn) { saveBtn.disabled = true; saveBtn.innerText = "⏳ Зберігаємо..."; }
 
-            console.log("[GroupedModal] Payload на бекенд:", payload);
-
             let response;
-            if (typeof apiBridge.edit_asset === 'function') {
+            // ВИПРАВЛЕННЯ: формуємо правильний об'єкт для API.py (bulkAction)
+            const requestConfig = {
+                uuids: [assetUuid],
+                actionType: 'edit',
+                mode: 'commit',
+                payload: payload
+            };
+
+            if (typeof apiBridge.bulkAction === 'function') {
+                response = await apiBridge.bulkAction(requestConfig);
+            } else if (typeof apiBridge.edit_asset === 'function') {
                 response = await apiBridge.edit_asset(payload);
-            } else if (typeof apiBridge.bulkAction === 'function') {
-                response = await apiBridge.bulkAction({ action: 'edit', data: payload });
-            } else if (typeof apiBridge.saveGroupedChanges === 'function') {
-                response = await apiBridge.saveGroupedChanges(payload);
             } else {
-                response = await apiBridge.bulkAction('edit', payload);
+                throw new Error("Метод API для збереження не знайдено.");
             }
 
-            console.log("[GroupedModal] Відповідь:", response);
+            console.log("[GroupedModal] Відповідь бекенду:", response);
 
             if (response?.success) {
                 this.close();
+                // Оновлюємо таблицю
                 if (typeof window.AssetTable?.loadData === 'function') {
                     window.AssetTable.loadData();
                 } else {
@@ -223,7 +207,18 @@ const GroupedModal = {
 
 window.GroupedModal = GroupedModal;
 
-document.addEventListener('asset:open-grouped-modal', (e) => {
-    console.log("[EventBus] asset:open-grouped-modal:", e);
-    GroupedModal.init(e);
-});
+// ВИПРАВЛЕННЯ: Слухаємо правильну подію через EventBus
+if (window.EventBus) {
+    window.EventBus.on('asset:open-grouped-modal', (data) => {
+        GroupedModal.init(data);
+    });
+} else {
+    // Слухаємо правильну кастомну шину подій (на випадок виклику з інших місць)
+    if (window.EventBus) {
+        window.EventBus.on('asset:open-grouped-modal', (payload) => {
+            // Коректно розпаковуємо дані ({ asset: match } або просто match)
+            const data = payload && payload.asset ? payload.asset : payload;
+            GroupedModal.init(data);
+        });
+    }
+}
