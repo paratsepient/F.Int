@@ -1,56 +1,61 @@
 import logging
 from pathlib import Path
+from typing import cast
 
 import webview
 
-# Імпортуємо наші модулі бекенду
 from backend.api import Api
 from backend.core.data_manager import DataManager
 from backend.core.excel_exporter import ExcelExporter
 
-# Налаштування базового логування для відстеження стану програми в консолі
+# Налаштування логування для відстеження стану нативного діалогового вікна
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger("F.Int.Main")
 
 
-def run_app():
-    # 1. Визначаємо шляхи до директорій згідно з архітектурою
-    db_path = Path("Import/Structured_Asset_Base.xlsx")
-    archive_path = Path("Archive")
+def main():
+    # Визначення базових робочих шляхів додатка
+    project_dir = Path(__file__).resolve().parent
+    db_path = project_dir / "Import" / "Structured_Asset_Base.xlsx"
+    frontend_dir = project_dir / "frontend"
+    index_html_path = frontend_dir / "index.html"
 
-    # 2. Ініціалізація компонентів бекенду
-    data_manager = DataManager(db_path)
-    excel_exporter = ExcelExporter(archive_path, data_manager)
+    logger.info(f"Запуск додатка F.Int. Робоча директорія: {project_dir}")
 
-    # 3. Створення API шлюзу, який зв'яже Vanilla JS та Python
-    api = Api(data_manager, excel_exporter)
+    # 1. Ініціалізуємо менеджер даних
+    data_manager = DataManager(db_path=db_path)
 
-    # 4. Створення та конфігурація вікна pywebview
-    window = webview.create_window(
-        "F.Int — Система обліку майна",
-        url="frontend/index.html",
-        js_api=api,
-        width=1200,
+    # 2. ЯВНО передаємо data_manager через іменований аргумент (це 100% прибирає помилку Pylance)
+    excel_exporter = ExcelExporter(data_manager=data_manager)
+
+    # 3. Зв'язуємо сервіси ядра з об'єктом маршрутизації API (також явно)
+    api_instance = Api(data_manager=data_manager, excel_exporter=excel_exporter)
+
+    # Завантаження інтерфейсу через локальний шлях движка Chromium
+    raw_window = webview.create_window(
+        title="F.Int — Система обліку майна",
+        url=str(index_html_path),
+        js_api=api_instance,
+        width=1280,
         height=800,
+        min_size=(1024, 768),
         resizable=True,
     )
 
-    # Захист типізації та реєстрація подій закриття вікна
-    if window is not None:
-        api.set_window(window)
+    # Примусово приводимо тип до чистого webview.Window за допомогою typing.cast.
+    window = cast(webview.Window, raw_window)
 
-        # КРИТИЧНЕ ВИПРАВЛЕННЯ: надійно підписуємося на подію системного закриття вікна (клік на хрестик "X")
-        window.events.closing += api.close_app
-    else:
-        logger.error("Критична помилка: Не вдалося створити головне вікно pywebview")
-        return
+    # Жорстка прив'язка створеного вікна ОС до нашого екземпляра API
+    api_instance.set_window(window)
 
-    # Запуск застосунку в режимі розробника (debug=True дозволяє відкривати інспектор по F12)
-    logger.info("Запуск інтерфейсу системи F.Int...")
+    # Реєстрація системного хука на закриття програми для примусового збереження змін в Excel
+    window.events.closing += api_instance.close_app
+
+    # Запуск GUI-потоку pywebview з увімкненим контекстом інструментів розробника
     webview.start(debug=True)
 
 
 if __name__ == "__main__":
-    run_app()
+    main()

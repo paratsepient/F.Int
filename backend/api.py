@@ -13,6 +13,7 @@ class Api:
         self._window: Optional[webview.Window] = None
 
     def set_window(self, window: webview.Window):
+        """Зберігає пряме посилання на головне вікно для виклику системних діалогів."""
         self._window = window
 
     def get_assets(self) -> List[Dict[str, Any]]:
@@ -55,6 +56,53 @@ class Api:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
+    def import_excel_file(self) -> Dict[str, Any]:
+        """
+        Відкриває нативний системний діалог вибору файлу Excel із подвійним
+        рівнем перевірки активного контексту вікна додатка.
+        """
+        # Резервний пошук активного вікна, якщо головний дескриптор не підтягнувся
+        active_win = self._window if self._window else webview.active_window()
+
+        if not active_win:
+            logger.error(
+                "Критична помилка: Нативне вікно системи не знайдено в жодному потоці."
+            )
+            return {
+                "success": False,
+                "error": "Нативне вікно додатка недоступне для ініціалізації діалогу.",
+            }
+
+        try:
+            # Визначення режимів роботи провідника ОС: 0 = OPEN_DIALOG
+            dialog_mode = 0
+            file_types = ("Excel Files (*.xlsx)", "All files (*.*)")
+
+            logger.info("Виклик системного вікна create_file_dialog...")
+
+            # Виклик діалогу провідника
+            result = active_win.create_file_dialog(
+                dialog_type=dialog_mode, allow_multiple=False, file_types=file_types
+            )
+
+            # Перевірка на закриття провідника без вибору файлу
+            if not result or len(result) == 0:
+                logger.info("Діалог закритий. Результат вибору порожній.")
+                return {
+                    "success": False,
+                    "error": "Операцію скасовано користувачем або провідником ОС.",
+                }
+
+            chosen_path = result[0]
+            logger.info(f"Успішно обрано файл: {chosen_path}")
+
+            # Передаємо файл у data_manager для імпорту та перезапису бази даних
+            return self.data_manager.import_and_replace_db(chosen_path)
+
+        except Exception as e:
+            logger.error(f"Критична помилка при роботі з create_file_dialog: {e}")
+            return {"success": False, "error": f"Помилка ОС: {str(e)}"}
+
     def save_and_exit(self) -> Dict[str, Any]:
         """
         Явний міст для кнопки 'Зберегти та вийти' в інтерфейсі.
@@ -80,7 +128,7 @@ class Api:
         """
         try:
             logger.info(
-                "🚨 Системний сигнал закриття вікна! Виконуємо автоматичний фінальний коміт даних у кеш та Excel..."
+                "🚨 Системний сигнал закриття вікна! Виконуємо автоматичний фінальний коміт даних у Excel..."
             )
             self.data_manager.save_final_excel()
         except Exception as e:

@@ -1,5 +1,5 @@
 /**
- * F.Int — Компонент таблиці активів (Asset Table) - FIXED CLICKABLE
+ * F.Int — Компонент таблиці активів (Asset Table) з функцією гарячого імпорту бази
  */
 
 const AssetTable = {
@@ -8,6 +8,7 @@ const AssetTable = {
     _selectedUuids: new Set(),
     _renderAnimationId: null,
     _eventsBound: false,
+    _isFileNotFound: false, // Прапорець стану відсутності файлу Excel
 
     DISPLAY_COLUMNS: [
         { key: "Найменування", width: "max-width: 300px;" },
@@ -20,7 +21,7 @@ const AssetTable = {
     ],
 
     init: function () {
-        console.log("[AssetTable] Ініціалізація з виправленою клікабельністю...");
+        console.log("[AssetTable] Ініціалізація з модулем імпорту відсутніх файлів...");
         this.renderStructure();
         this.listenEvents();
         this.bindTableDelegation();
@@ -45,12 +46,12 @@ const AssetTable = {
                     ⏳ Рендеринг даних...
                 </div>
 
-                <div style="overflow-y: auto; overflow-x: auto; flex: 1;">
-                    <table class="data-table" style="width: 100%; border-collapse: collapse; text-align: left;">
+                <div style="overflow-y: auto; overflow-x: auto; flex: 1; display: flex; flex-direction: column;">
+                    <table class="data-table" style="width: 100%; border-collapse: collapse; text-align: left; flex: 1;">
                         <thead style="position: sticky; top: 0; background-color: var(--color-bg-sidebar); z-index: 10; box-shadow: 0 1px 0 var(--color-border);">
                             <tr id="table-header-row"></tr>
                         </thead>
-                        <tbody id="table-body"></tbody>
+                        <tbody id="table-body" style="flex: 1;"></tbody>
                     </table>
                 </div>
             </div>
@@ -65,8 +66,8 @@ const AssetTable = {
         const self = this;
 
         let fetchMethod = null;
-        if (window.ApiBridge && typeof window.ApiBridge.get_assets === 'function') fetchMethod = () => window.ApiBridge.get_assets();
-        else if (window.ApiBridge && typeof window.ApiBridge.getAssets === 'function') fetchMethod = () => window.ApiBridge.getAssets();
+        if (window.ApiBridge && typeof window.ApiBridge.getAssets === 'function') fetchMethod = () => window.ApiBridge.getAssets();
+        else if (window.ApiBridge && typeof window.ApiBridge.get_assets === 'function') fetchMethod = () => window.ApiBridge.get_assets();
         else if (window.Api && typeof window.Api.get_assets === 'function') fetchMethod = () => window.Api.get_assets();
         else if (window.pywebview && window.pywebview.api) fetchMethod = () => window.pywebview.api.get_assets();
 
@@ -75,13 +76,20 @@ const AssetTable = {
             if (overlay) overlay.style.display = 'block';
 
             fetchMethod().then(function (data) {
-                self._data = data || [];
-                self._filteredData = self._data;
+                if (data && data.length === 1 && data[0]["__SYSTEM_STATUS__"] === "FILE_NOT_FOUND") {
+                    self._isFileNotFound = true;
+                    self._data = [];
+                    self._filteredData = [];
+                } else {
+                    self._isFileNotFound = false;
+                    self._data = data || [];
+                    self._filteredData = self._data;
+                }
 
                 if (window.EventBus) window.EventBus.emit('filters:count-updated', self._filteredData.length);
                 self.renderRowsProgressive();
 
-                if (window.FilterPanel && typeof window.FilterPanel.buildDynamicDirectories === 'function') {
+                if (!self._isFileNotFound && window.FilterPanel && typeof window.FilterPanel.buildDynamicDirectories === 'function') {
                     window.FilterPanel.buildDynamicDirectories();
                 }
             }).catch(function (err) {
@@ -89,7 +97,7 @@ const AssetTable = {
                 if (overlay) overlay.style.display = 'none';
             });
         } else {
-            console.error("[AssetTable] Не знайдено міст API (ApiBridge / pywebview) для завантаження майна.");
+            console.error("[AssetTable] Не знайдено міст API для завантаження майна.");
         }
     },
 
@@ -128,6 +136,55 @@ const AssetTable = {
         }
     },
 
+    triggerFileImport: async function () {
+        // КРИТИЧНЕ ВИПРАВЛЕННЯ: Глибокий пошук методу імпорту в обхід існуючих мостів, якщо вони не оновлені
+        let apiMethod = null;
+
+        if (window.ApiBridge && typeof window.ApiBridge.import_excel_file === 'function') {
+            apiMethod = () => window.ApiBridge.import_excel_file();
+        } else if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.import_excel_file === 'function') {
+            apiMethod = () => window.pywebview.api.import_excel_file();
+        } else if (window.Api && typeof window.Api.import_excel_file === 'function') {
+            apiMethod = () => window.Api.import_excel_file();
+        }
+
+        if (!apiMethod) {
+            console.error("[AssetTable] Не знайдено метод import_excel_file. Стан API:", { ApiBridge: window.ApiBridge, pywebview: window.pywebview?.api });
+            alert("Помилка: Бекенд-функція імпорту недоступна. Будь ласка, переконайтеся, що файл backend/api.py містить метод import_excel_file.");
+            return;
+        }
+
+        try {
+            const btn = document.getElementById('btn-import-trigger');
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = "⏳ Очікування вибору файлу (вікно може бути позаду браузера)...";
+            }
+
+            const response = await apiMethod();
+            console.log("[AssetTable] Результат імпорту з бекенду:", response);
+
+            if (response?.success) {
+                alert(`Імпорт успішний! Завантажено рядків: ${response.rows_imported}`);
+                this.loadData();
+            } else {
+                alert(`Не вдалося завантажити файл: ${response?.error || 'Операцію скасовано користувачем'}`);
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = "📁 Імпортувати файл бази даних Excel";
+                }
+            }
+        } catch (error) {
+            console.error("Помилка при виклику нативного імпорту:", error);
+            alert(`Критична помилка інтерфейсу: ${error.message}`);
+            const btn = document.getElementById('btn-import-trigger');
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = "📁 Імпортувати файл бази даних Excel";
+            }
+        }
+    },
+
     renderRowsProgressive: function () {
         const tbody = document.getElementById('table-body');
         const overlay = document.getElementById('table-loading-overlay');
@@ -138,6 +195,30 @@ const AssetTable = {
         }
 
         tbody.innerHTML = '';
+
+        if (this._isFileNotFound) {
+            if (overlay) overlay.style.display = 'none';
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="10" style="text-align: center; padding: 60px 30px; background: var(--color-bg-sidebar);">
+                        <div style="max-width: 420px; margin: 0 auto; display: flex; flex-direction: column; align-items: center; gap: 16px;">
+                            <span style="font-size: 36px;">⚠️</span>
+                            <div style="font-size: 15px; font-weight: 600; color: var(--color-text-main);">Файл бази даних Excel не знайдено</div>
+                            <p style="font-size: 13px; color: var(--color-text-muted); margin: 0; line-height: 1.5;">Програма не змогла виявити файл реєстру в робочій директорії. Будь ласка, імпортуйте існуючий файл бази даних.</p>
+                            <button id="btn-import-trigger" style="margin-top: 8px; padding: 10px 20px; background: var(--color-accent, #3b82f6); color: #ffffff; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.2); transition: background 0.2s;">
+                                📁 Імпортувати файл бази даних Excel
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+
+            const btn = document.getElementById('btn-import-trigger');
+            if (btn) {
+                btn.onclick = () => this.triggerFileImport();
+            }
+            return;
+        }
 
         if (this._filteredData.length === 0) {
             tbody.innerHTML = `<tr><td colspan="10" style="text-align: center; padding: 30px; color: var(--color-text-muted);">Майно не знайдено</td></tr>`;
@@ -161,7 +242,7 @@ const AssetTable = {
 
             for (let i = currentIndex; i < end; i++) {
                 const row = dataToRender[i];
-                const uuid = String(row["UUID"]); // Приводимо до рядка гарантовано
+                const uuid = String(row["UUID"]);
                 const isChecked = self._selectedUuids.has(uuid) ? 'checked' : '';
                 const rowBg = self._selectedUuids.has(uuid) ? 'background-color: var(--color-accent-subtle);' : '';
 
@@ -242,13 +323,21 @@ const AssetTable = {
         const self = this;
 
         tbody.addEventListener('click', function (e) {
+            if (e.target.closest('#btn-import-trigger')) return;
+
             const tr = e.target.closest('.asset-row');
             if (!tr) return;
 
-            const uuid = String(tr.dataset.uuid); // Строга типізація
+            const uuid = String(tr.dataset.uuid);
 
-            if (e.target.classList.contains('row-checkbox')) {
-                const checkbox = e.target;
+            if (e.target.closest('.td-checkbox') || e.target.classList.contains('row-checkbox')) {
+                const checkbox = tr.querySelector('.row-checkbox');
+                if (!checkbox) return;
+
+                if (!e.target.classList.contains('row-checkbox')) {
+                    checkbox.checked = !checkbox.checked;
+                }
+
                 if (checkbox.checked) {
                     self._selectedUuids.add(uuid);
                     tr.style.backgroundColor = 'var(--color-accent-subtle)';
@@ -269,12 +358,10 @@ const AssetTable = {
                 return;
             }
 
-            // ПРАВКА: Пошук повного об'єкта в _data (де є всі дані з B по X)
             const match = self._data.find(a => String(a["UUID"]) === uuid);
 
             if (match) {
-                console.log("[AssetTable] Клік по майну, відкриваємо повну інфо:", match);
-                // Прямий, гарантований виклик модального вікна
+                console.log("[AssetTable] Відкриваємо картку:", match);
                 if (window.GroupedModal) {
                     window.GroupedModal.open(match);
                 } else {
@@ -300,6 +387,8 @@ const AssetTable = {
     },
 
     applyFilters: function (filters) {
+        if (this._isFileNotFound) return;
+
         this._selectedUuids.clear();
         this.notifySelection();
 
@@ -315,15 +404,12 @@ const AssetTable = {
             const matchType = filters.type === 'all' || row["Тип"] === filters.type;
             const matchMvo = filters.mvo === 'all' || row["МВО (Прізвище)"] === filters.mvo;
 
-            // ПРАВКА №2: Коректне фільтрування майна, яке знаходиться на кількох об'єктах одразу
             let matchObject = false;
             if (filters.object === 'all') {
                 matchObject = true;
             } else if (Array.isArray(row["Об'єкт_список"]) && row["Об'єкт_список"].length > 0) {
-                // Якщо є масив розбитих об'єктів (через ;) — шукаємо точний збіг у цьому списку
                 matchObject = row["Об'єкт_список"].includes(filters.object);
             } else {
-                // Фолбек (для старих записів без ;)
                 matchObject = row["Об'єкт"] === filters.object;
             }
 
