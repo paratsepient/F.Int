@@ -1,4 +1,6 @@
 import logging
+import os
+import sys
 from pathlib import Path
 from typing import cast
 
@@ -7,6 +9,16 @@ import webview
 from backend.api import Api
 from backend.core.data_manager import DataManager
 from backend.core.excel_exporter import ExcelExporter
+
+
+def resource_path(relative_path):
+    """Отримує абсолютний шлях до ресурсів для роботи в exe та dev-режимі"""
+    # getattr безпечно намагається знайти '_MEIPASS' у sys.
+    # Якщо не знаходить (бо ми не в exe) — повертає шлях до поточної папки.
+    base_path = getattr(sys, "_MEIPASS", os.path.abspath("."))
+
+    return os.path.join(base_path, relative_path)
+
 
 # Налаштування логування для відстеження стану нативного діалогового вікна
 logging.basicConfig(
@@ -19,6 +31,12 @@ def main():
     # Визначення базових робочих шляхів додатка
     project_dir = Path(__file__).resolve().parent
     db_path = project_dir / "Import" / "Structured_Asset_Base.xlsx"
+
+    # Створюємо шлях для експортованих документів (актів/накладних)
+    archive_dir = project_dir / "Archive"
+    # Гарантуємо, що папка існує (якщо ні — Python її автоматично створить)
+    archive_dir.mkdir(parents=True, exist_ok=True)
+
     frontend_dir = project_dir / "frontend"
     index_html_path = frontend_dir / "index.html"
 
@@ -27,10 +45,10 @@ def main():
     # 1. Ініціалізуємо менеджер даних
     data_manager = DataManager(db_path=db_path)
 
-    # 2. ЯВНО передаємо data_manager через іменований аргумент (це 100% прибирає помилку Pylance)
-    excel_exporter = ExcelExporter(data_manager=data_manager)
+    # 2. ВИПРАВЛЕНО: Передаємо обидва обов'язкові аргументи
+    excel_exporter = ExcelExporter(data_manager=data_manager, archive_dir=archive_dir)
 
-    # 3. Зв'язуємо сервіси ядра з об'єктом маршрутизації API (також явно)
+    # 3. Зв'язуємо сервіси ядра з об'єктом маршрутизації API
     api_instance = Api(data_manager=data_manager, excel_exporter=excel_exporter)
 
     # Завантаження інтерфейсу через локальний шлях движка Chromium
@@ -44,7 +62,7 @@ def main():
         resizable=True,
     )
 
-    # Примусово приводимо тип до чистого webview.Window за допомогою typing.cast.
+    # Примусово приводимо тип до чистого webview.Window за допомогою typing.cast
     window = cast(webview.Window, raw_window)
 
     # Жорстка прив'язка створеного вікна ОС до нашого екземпляра API

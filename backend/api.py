@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 import webview
 
@@ -17,7 +17,7 @@ class Api:
         self._window = window
 
     def get_assets(self) -> List[Dict[str, Any]]:
-        """Повертає повний, розгорнутий список позицій для миттєвого рендеру таблиці."""
+        """Повертає повний список позицій для відображення в таблиці."""
         try:
             return self.data_manager.get_aggregated_assets()
         except Exception as e:
@@ -25,7 +25,7 @@ class Api:
             return []
 
     def get_details_by_name(self, name: str) -> List[Dict[str, Any]]:
-        """Точковий швидкий запит граф (МВО/Локацій) для модалки при кліку на майно."""
+        """Запит деталей майна для модального вікна."""
         try:
             return self.data_manager.get_assets_by_name(name)
         except Exception as e:
@@ -33,7 +33,7 @@ class Api:
             return []
 
     def bulkAction(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Обробка масових дій над майном (редагування, переміщення, списання, експорт)."""
+        """Обробка масових дій (редагування, переміщення, списання)."""
         try:
             uuids: List[str] = config.get("uuids", [])
             action_type: str = config.get("actionType", "")
@@ -54,82 +54,68 @@ class Api:
                 case _:
                     return {"success": False, "error": "Невідома операція."}
         except Exception as e:
+            logger.error(f"Помилка в bulkAction: {e}")
             return {"success": False, "error": str(e)}
 
     def import_excel_file(self) -> Dict[str, Any]:
-        """
-        Відкриває нативний системний діалог вибору файлу Excel із подвійним
-        рівнем перевірки активного контексту вікна додатка.
-        """
-        # Резервний пошук активного вікна, якщо головний дескриптор не підтягнувся
+        """Відкриває системний діалог вибору файлу Excel."""
         active_win = self._window if self._window else webview.active_window()
 
         if not active_win:
-            logger.error(
-                "Критична помилка: Нативне вікно системи не знайдено в жодному потоці."
-            )
-            return {
-                "success": False,
-                "error": "Нативне вікно додатка недоступне для ініціалізації діалогу.",
-            }
+            logger.error("Нативне вікно додатка недоступне.")
+            return {"success": False, "error": "Вікно програми неактивне."}
 
         try:
-            # Визначення режимів роботи провідника ОС: 0 = OPEN_DIALOG
-            dialog_mode = 0
-            file_types = ("Excel Files (*.xlsx)", "All files (*.*)")
+            dialog_type = cast(int, webview.OPEN_DIALOG)
+            file_types = ("Excel Files (*.xlsx)",)
 
-            logger.info("Виклик системного вікна create_file_dialog...")
-
-            # Виклик діалогу провідника
             result = active_win.create_file_dialog(
-                dialog_type=dialog_mode, allow_multiple=False, file_types=file_types
+                dialog_type=dialog_type, file_types=file_types
             )
 
-            # Перевірка на закриття провідника без вибору файлу
-            if not result or len(result) == 0:
-                logger.info("Діалог закритий. Результат вибору порожній.")
-                return {
-                    "success": False,
-                    "error": "Операцію скасовано користувачем або провідником ОС.",
-                }
+            if not result:
+                return {"success": False, "error": "Операцію скасовано"}
 
             chosen_path = result[0]
-            logger.info(f"Успішно обрано файл: {chosen_path}")
+            logger.info(f"Імпорт файлу: {chosen_path}")
 
-            # Передаємо файл у data_manager для імпорту та перезапису бази даних
             return self.data_manager.import_and_replace_db(chosen_path)
 
         except Exception as e:
-            logger.error(f"Критична помилка при роботі з create_file_dialog: {e}")
-            return {"success": False, "error": f"Помилка ОС: {str(e)}"}
+            logger.error(f"Помилка в API імпорту: {e}")
+            return {"success": False, "error": str(e)}
 
     def save_and_exit(self) -> Dict[str, Any]:
         """
-        Явний міст для кнопки 'Зберегти та вийти' в інтерфейсі.
-        Викликає повну синхронізацію файлів та закриває вікно додатка.
+        ВИПРАВЛЕНО: Виконує жорстку фінальну транзакцію збереження Excel бази даних.
+        Якщо файл Excel заблоковано користувачем, метод НЕ закриє додаток,
+        а поверне дескриптор помилки у JavaScript.
         """
         try:
             logger.info(
-                "Виклик 'Зберегти та вийти' з фронтенду. Синхронізація даних..."
+                "Виклик 'Зберегти та вийти' з фронтенду. Запуск синхронізації..."
             )
+
+            # Викликаємо збереження. Якщо файл заблоковано Excel-ем, тут підніметься Exception
             self.data_manager.save_final_excel()
 
-            if self._window is not None:
+            # Якщо збереження пройшло без помилок — руйнуємо вікно додатка
+            if self._window:
+                logger.info(
+                    "Синхронізація успішна. Знищення інстансу вікна pywebview..."
+                )
                 self._window.destroy()
             return {"success": True}
+
         except Exception as e:
-            logger.error(f"Критична помилка при збереженні та виході: {e}")
+            logger.error(f"Неможливо виконати закриття додатка. Помилка I/O: {e}")
+            # Повертаємо опис критичного блокування у UI для відображення через alert()
             return {"success": False, "error": str(e)}
 
     def close_app(self):
-        """
-        Автоматичний тригер закриття додатка (перехоплює клік на системний хрестик вікна).
-        Виконує фінальне атомарне збереження. Вікно закриється автоматично після завершення методу.
-        """
+        """Фінальне збереження при закритті вікна ОС через системний хрестик."""
         try:
-            logger.info(
-                "🚨 Системний сигнал закриття вікна! Виконуємо автоматичний фінальний коміт даних у Excel..."
-            )
+            logger.info("Системне закриття: виконується фінальний коміт даних.")
             self.data_manager.save_final_excel()
         except Exception as e:
             logger.error(f"Помилка фінального збереження: {e}")
