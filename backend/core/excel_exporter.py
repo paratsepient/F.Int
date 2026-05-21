@@ -32,7 +32,7 @@ class ExcelExporter:
         self, uuids: List[str], payload: Dict[str, Any], mode: str
     ) -> Dict[str, Any]:
         try:
-            all_assets = self.data_manager.get_all_assets()
+            all_assets = self.data_manager.get_aggregated_assets()
             selected_assets = [a for a in all_assets if str(a.get("UUID")) in uuids]
 
             if not selected_assets:

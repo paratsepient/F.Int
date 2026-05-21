@@ -28,19 +28,34 @@ logger = logging.getLogger("F.Int.Main")
 
 
 def main():
-    # Визначення базових робочих шляхів додатка
-    project_dir = Path(__file__).resolve().parent
-    db_path = project_dir / "Import" / "Structured_Asset_Base.xlsx"
+    if getattr(sys, "frozen", False):
+        # Якщо додаток запущено з PyInstaller exe
+        base_path = Path(sys.executable).parent
+        # Створюємо папку 'Import' поряд з exe для бази даних
+        db_import_dir = base_path / "Import"
+        db_import_dir.mkdir(parents=True, exist_ok=True)
+        db_path = db_import_dir / "Structured_Asset_Base.xlsx"
 
-    # Створюємо шлях для експортованих документів (актів/накладних)
-    archive_dir = project_dir / "Archive"
-    # Гарантуємо, що папка існує (якщо ні — Python її автоматично створить)
-    archive_dir.mkdir(parents=True, exist_ok=True)
+        # Створюємо папку 'Archive' поряд з exe
+        archive_dir = base_path / "Archive"
+        archive_dir.mkdir(parents=True, exist_ok=True)
 
-    frontend_dir = project_dir / "frontend"
-    index_html_path = frontend_dir / "index.html"
+        frontend_dir = base_path / "frontend"
+        index_html_path = frontend_dir / "index.html"
 
-    logger.info(f"Запуск додатка F.Int. Робоча директорія: {project_dir}")
+        logger.info(f"Запуск додатка F.Int (EXE). Базова директорія: {base_path}, Директорія бази даних: {db_import_dir}, Директорія архіву: {archive_dir}")
+    else:
+        # Режим розробки
+        project_dir = Path(__file__).resolve().parent
+        db_path = project_dir / "Import" / "Structured_Asset_Base.xlsx"
+
+        archive_dir = project_dir / "Archive"
+        archive_dir.mkdir(parents=True, exist_ok=True)
+
+        frontend_dir = project_dir / "frontend"
+        index_html_path = frontend_dir / "index.html"
+
+        logger.info(f"Запуск додатка F.Int (DEV). Робоча директорія: {project_dir}")
 
     # 1. Ініціалізуємо менеджер даних
     data_manager = DataManager(db_path=db_path)
