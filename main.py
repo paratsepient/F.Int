@@ -10,84 +10,73 @@ from backend.api import Api
 from backend.core.data_manager import DataManager
 from backend.core.excel_exporter import ExcelExporter
 
-
-def resource_path(relative_path):
-    """Отримує абсолютний шлях до ресурсів для роботи в exe та dev-режимі"""
-    # getattr безпечно намагається знайти '_MEIPASS' у sys.
-    # Якщо не знаходить (бо ми не в exe) — повертає шлях до поточної папки.
-    base_path = getattr(sys, "_MEIPASS", os.path.abspath("."))
-
-    return os.path.join(base_path, relative_path)
-
-
-# Налаштування логування для відстеження стану нативного діалогового вікна
+# Налаштування логування для моніторингу станів
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 )
 logger = logging.getLogger("F.Int.Main")
 
 
-def main():
-    if getattr(sys, "frozen", False):
-        # Якщо додаток запущено з PyInstaller exe
-        base_path = Path(sys.executable).parent
-        # Створюємо папку 'Import' поряд з exe для бази даних
-        db_import_dir = base_path / "Import"
-        db_import_dir.mkdir(parents=True, exist_ok=True)
-        db_path = db_import_dir / "Structured_Asset_Base.xlsx"
-
-        # Створюємо папку 'Archive' поряд з exe
-        archive_dir = base_path / "Archive"
-        archive_dir.mkdir(parents=True, exist_ok=True)
-
-        frontend_dir = base_path / "frontend"
-        index_html_path = frontend_dir / "index.html"
-
-        logger.info(f"Запуск додатка F.Int (EXE). Базова директорія: {base_path}, Директорія бази даних: {db_import_dir}, Директорія архіву: {archive_dir}")
+def get_resource_path(relative_path: str) -> str:
+    """
+    Повертає суворий абсолютний шлях до статичних ресурсів додатка.
+    Захищено директивою аналізу типів лінтера для віртуального диска PyInstaller.
+    """
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        base_path = Path(str(sys._MEIPASS))  # type: ignore
     else:
-        # Режим розробки
-        project_dir = Path(__file__).resolve().parent
-        db_path = project_dir / "Import" / "Structured_Asset_Base.xlsx"
+        base_path = Path(os.path.abspath(__file__)).parent
 
-        archive_dir = project_dir / "Archive"
-        archive_dir.mkdir(parents=True, exist_ok=True)
+    full_path = base_path / relative_path
+    return str(full_path.resolve())
 
-        frontend_dir = project_dir / "frontend"
-        index_html_path = frontend_dir / "index.html"
 
-        logger.info(f"Запуск додатка F.Int (DEV). Робоча директорія: {project_dir}")
+def main():
+    logger.info("=== Ініціалізація системи обліку майна F.Int ===")
 
-    # 1. Ініціалізуємо менеджер даних
-    data_manager = DataManager(db_path=db_path)
+    # Ініціалізація бізнес-логіки бекенду
+    data_manager = DataManager()
 
-    # 2. ВИПРАВЛЕНО: Передаємо обидва обов'язкові аргументи
-    excel_exporter = ExcelExporter(data_manager=data_manager, archive_dir=archive_dir)
-
-    # 3. Зв'язуємо сервіси ядра з об'єктом маршрутизації API
-    api_instance = Api(data_manager=data_manager, excel_exporter=excel_exporter)
-
-    # Завантаження інтерфейсу через локальний шлях движка Chromium
-    raw_window = webview.create_window(
-        title="F.Int — Система обліку майна",
-        url=str(index_html_path),
-        js_api=api_instance,
-        width=1280,
-        height=800,
-        min_size=(1024, 768),
-        resizable=True,
+    # Визначаємо шлях до архіву документів
+    archive_directory = data_manager.info_dir / "archive"
+    excel_exporter = ExcelExporter(
+        archive_dir=archive_directory, data_manager=data_manager
     )
 
-    # Примусово приводимо тип до чистого webview.Window за допомогою typing.cast
-    window = cast(webview.Window, raw_window)
+    # Створення об'єкта API-мосту
+    api = Api(data_manager, excel_exporter)
+    html_entry_point = get_resource_path("frontend/index.html")
 
-    # Жорстка прив'язка створеного вікна ОС до нашого екземпляра API
-    api_instance.set_window(window)
+    if not os.path.exists(html_entry_point):
+        logger.critical(
+            f"Критична помилка: Файл фронтенду відсутній за шляхом: {html_entry_point}"
+        )
+        sys.exit(1)
 
-    # Реєстрація системного хука на закриття програми для примусового збереження змін в Excel
-    window.events.closing += api_instance.close_app
+    # Створення нативного вікна додатка pywebview
+    raw_window = webview.create_window(
+        title="F.Int — Система обліку майна",
+        url=html_entry_point,
+        js_api=api,  # type: ignore
+        width=1280,
+        height=800,
+        min_size=(1024, 728),
+        text_select=True,
+    )
 
-    # Запуск GUI-потоку pywebview з увімкненим контекстом інструментів розробника
-    webview.start(debug=True)
+    # Захисний Type Guard для валідації типів у Pylance
+    if raw_window is not None:
+        window = cast(webview.Window, raw_window)
+        api.set_window(window)
+        # Реєструємо автоматичне збереження змін при натисканні на системний хрестик ОС
+        window.events.closing += api.close_app
+    else:
+        logger.critical("Не вдалося створити вікно додатка pywebview.")
+        sys.exit(1)
+
+    # Запуск головного циклу подій вікна
+    # СУВОРЕ ВИМКНЕННЯ DEVTOOLS: debug=False повністю блокує інструменти розробника та контекстне меню
+    webview.start(debug=False)
 
 
 if __name__ == "__main__":

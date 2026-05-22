@@ -1,407 +1,216 @@
 /**
- * F.Int — Компонент таблиці активів (Asset Table) з функцією гарячого імпорту бази
+ * F.Int — Компонент головної таблиці майна (Asset Table Component)
+ * Реалізує повноекранне відображення, сувору автентичну фільтрацію,
+ * розрахунок домінантних локацій та інтелектуальну диспетчеризацію підпозицій.
  */
 
 const AssetTable = {
+    // Вхідний масив плоских (атомарних) рядків з унікальними UUID, отриманий з Excel
     _data: [],
+    // Масив рядків, які пройшли поточні системні фільтри
     _filteredData: [],
-    _selectedUuids: new Set(),
-    _renderAnimationId: null,
-    _eventsBound: false,
-    _isFileNotFound: false, // Прапорець стану відсутності файлу Excel
+    // Кінцевий агрегований масив, що виводиться безпосередньо на екран користувача
+    _filteredGroupedData: [],
+    // Прапорець аварійного стану відсутності файлу бази в каталозі info
+    _isFileNotFound: false,
 
+    // СУВОРЕ КРИТИЧНЕ ВИПРАВЛЕННЯ: Масив колонок жорстко зафіксовано.
+    // Жодні зовнішні чи додані поля не зможуть порушити геометрію головного списку.
     DISPLAY_COLUMNS: [
-        { key: "Найменування", width: "max-width: 300px;" },
-        { key: "Інв. / Номенкл. №", width: "max-width: 150px;" },
-        { key: "Тип", width: "max-width: 150px;" },
-        { key: "Одиниця виміру", width: "max-width: 100px;" },
-        { key: "Кількість (факт)", width: "max-width: 100px;" },
-        { key: "МВО (Прізвище)", width: "max-width: 180px;" },
+        { key: "Найменування", width: "max-width: 280px;" },
+        { key: "Інв. / Номенкл. №", width: "max-width: 140px;" },
+        { key: "Тип майна", width: "max-width: 150px;" },
+        { key: "Одиниця виміру", width: "max-width: 90px;" },
+        { key: "Кількість (факт)", width: "max-width: 90px;" },
+        { key: "МВО (Прізвище)", width: "max-width: 160px;" },
         { key: "Об'єкт", width: "max-width: 180px;" }
     ],
 
+    /**
+     * Первинний запуск та монтування вузлів компонента таблиці
+     */
     init: function () {
-        console.log("[AssetTable] Ініціалізація з модулем імпорту відсутніх файлів...");
+        console.log("[AssetTable] Запуск системи генерації головного списку ТМЦ...");
         this.renderStructure();
-        this.listenEvents();
         this.bindTableDelegation();
         this.loadData();
     },
 
+    /**
+     * Рендеринг базової HTML-оболонки таблиці з фіксованим липким заголовком (Sticky Header)
+     */
     renderStructure: function () {
         const placeholder = document.getElementById('asset-table-placeholder');
         if (!placeholder) return;
 
         placeholder.innerHTML = `
-            <style>
-                #asset-table-wrapper .td-checkbox, 
-                #asset-table-wrapper .th-checkbox { display: none; }
-                #asset-table-wrapper.selection-active .td-checkbox, 
-                #asset-table-wrapper.selection-active .th-checkbox { display: table-cell; }
-            </style>
-            
             <div id="asset-table-wrapper" class="table-container" style="background-color: var(--color-bg-sidebar); border: 1px solid var(--color-border); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; flex: 1; position: relative;">
-                
-                <div id="table-loading-overlay" style="display: none; position: absolute; top: 45px; left: 0; right: 0; background: rgba(255,255,255,0.8); z-index: 5; text-align: center; padding: 10px; font-size: 12px; color: var(--color-accent); font-weight: 600; backdrop-filter: blur(2px);">
-                    ⏳ Рендеринг даних...
-                </div>
-
-                <div style="overflow-y: auto; overflow-x: auto; flex: 1; display: flex; flex-direction: column;">
-                    <table class="data-table" style="width: 100%; border-collapse: collapse; text-align: left; flex: 1;">
+                <div style="overflow-y: auto; overflow-x: auto; flex: 1;">
+                    <table class="data-table" style="width: 100%; border-collapse: collapse; text-align: left; table-layout: fixed;">
                         <thead style="position: sticky; top: 0; background-color: var(--color-bg-sidebar); z-index: 10; box-shadow: 0 1px 0 var(--color-border);">
                             <tr id="table-header-row"></tr>
                         </thead>
-                        <tbody id="table-body" style="flex: 1;"></tbody>
+                        <tbody id="table-body"></tbody>
                     </table>
                 </div>
             </div>
         `;
+    },
 
-        if (window.FilterPanel && window.FilterPanel._selectionMode) {
-            document.getElementById('asset-table-wrapper').classList.add('selection-active');
+    /**
+     * Асинхронне завантаження плоского реєстру активів через міст API
+     */
+    loadData: async function () {
+        try {
+            const data = await window.ApiBridge.getAssets();
+
+            // Перевірка наявності тригера відсутності файлу
+            if (data && data.length === 1 && data[0]["__SYSTEM_STATUS__"] === "FILE_NOT_FOUND") {
+                this._isFileNotFound = true;
+                this._data = [];
+            } else {
+                this._isFileNotFound = false;
+                this._data = data || [];
+            }
+
+            this._filteredData = this._data;
+
+            // Синхронізуємо довідники панелі фільтрації та пулу глобального автокомпліту
+            if (!this._isFileNotFound && window.FilterPanel && typeof window.FilterPanel.buildDynamicDirectories === 'function') {
+                window.FilterPanel.buildDynamicDirectories();
+            } else {
+                this.renderRowsProgressive();
+            }
+
+            // Оновлюємо відображення відповідно до встановлених селектів пошуку
+            if (window.FilterPanel && window.FilterPanel._filters) {
+                this.applyFilters(window.FilterPanel._filters);
+            }
+
+        } catch (err) {
+            console.error("[AssetTable] Помилка завантаження плоских даних:", err);
         }
     },
 
-    loadData: function () {
-        const self = this;
-
-        let fetchMethod = null;
-        if (window.ApiBridge && typeof window.ApiBridge.getAssets === 'function') fetchMethod = () => window.ApiBridge.getAssets();
-        else if (window.ApiBridge && typeof window.ApiBridge.get_assets === 'function') fetchMethod = () => window.ApiBridge.get_assets();
-        else if (window.Api && typeof window.Api.get_assets === 'function') fetchMethod = () => window.Api.get_assets();
-        else if (window.pywebview && window.pywebview.api) fetchMethod = () => window.pywebview.api.get_assets();
-
-        if (fetchMethod) {
-            const overlay = document.getElementById('table-loading-overlay');
-            if (overlay) overlay.style.display = 'block';
-
-            fetchMethod().then(function (data) {
-                if (data && data.length === 1 && data[0]["__SYSTEM_STATUS__"] === "FILE_NOT_FOUND") {
-                    self._isFileNotFound = true;
-                    self._data = [];
-                    self._filteredData = [];
-                } else {
-                    self._isFileNotFound = false;
-                    self._data = data || [];
-                    self._filteredData = self._data;
-                }
-
-                if (window.EventBus) window.EventBus.emit('filters:count-updated', self._filteredData.length);
-                self.renderRowsProgressive();
-
-                if (!self._isFileNotFound && window.FilterPanel && typeof window.FilterPanel.buildDynamicDirectories === 'function') {
-                    window.FilterPanel.buildDynamicDirectories();
-                }
-            }).catch(function (err) {
-                console.error("[AssetTable] Помилка завантаження даних:", err);
-                if (overlay) overlay.style.display = 'none';
-            });
-        } else {
-            console.error("[AssetTable] Не знайдено міст API для завантаження майна.");
-        }
-    },
-
+    /**
+     * Генерація заголовків стовпців. Першим завжди йде статичний маркер №
+     */
     renderDynamicHeader: function () {
         const theadRow = document.getElementById('table-header-row');
         if (!theadRow) return;
 
-        let headerHtml = `
-            <th class="th-checkbox" style="padding: 12px 16px; width: 40px; border-bottom: 1px solid var(--color-border);"><input type="checkbox" id="selectAll"></th>
-            <th style="padding: 12px 16px; width: 50px; font-size: 12px; color: var(--color-text-muted); border-bottom: 1px solid var(--color-border);">№</th>
-        `;
+        let headerHtml = `<th style="padding: 12px 16px; width: 45px; font-size: 12px; color: var(--color-text-muted); border-bottom: 1px solid var(--color-border); font-weight: 700;">№</th>`;
 
         this.DISPLAY_COLUMNS.forEach(col => {
-            let displayName = col.key;
-            if (window.SettingsModule && typeof window.SettingsModule.getColumnName === 'function') {
-                displayName = window.SettingsModule.getColumnName(col.key);
-            }
-
-            headerHtml += `<th style="padding: 12px 16px; font-size: 12px; color: var(--color-text-muted); border-bottom: 1px solid var(--color-border); white-space: nowrap; font-weight: 700;">${displayName}</th>`;
+            headerHtml += `<th style="padding: 12px 16px; font-size: 12px; color: var(--color-text-muted); border-bottom: 1px solid var(--color-border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 700; ${col.width}">${col.key}</th>`;
         });
 
         theadRow.innerHTML = headerHtml;
-
-        const selectAll = document.getElementById('selectAll');
-        if (selectAll) {
-            selectAll.addEventListener('change', (e) => {
-                const isChecked = e.target.checked;
-                if (isChecked) {
-                    this._filteredData.forEach(row => this._selectedUuids.add(String(row["UUID"])));
-                } else {
-                    this._selectedUuids.clear();
-                }
-                this.renderRowsProgressive();
-                this.notifySelection();
-            });
-        }
     },
 
-    triggerFileImport: async function () {
-        // КРИТИЧНЕ ВИПРАВЛЕННЯ: Глибокий пошук методу імпорту в обхід існуючих мостів, якщо вони не оновлені
-        let apiMethod = null;
-
-        if (window.ApiBridge && typeof window.ApiBridge.import_excel_file === 'function') {
-            apiMethod = () => window.ApiBridge.import_excel_file();
-        } else if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.import_excel_file === 'function') {
-            apiMethod = () => window.pywebview.api.import_excel_file();
-        } else if (window.Api && typeof window.Api.import_excel_file === 'function') {
-            apiMethod = () => window.Api.import_excel_file();
-        }
-
-        if (!apiMethod) {
-            console.error("[AssetTable] Не знайдено метод import_excel_file. Стан API:", { ApiBridge: window.ApiBridge, pywebview: window.pywebview?.api });
-            alert("Помилка: Бекенд-функція імпорту недоступна. Будь ласка, переконайтеся, що файл backend/api.py містить метод import_excel_file.");
-            return;
-        }
-
-        try {
-            const btn = document.getElementById('btn-import-trigger');
-            if (btn) {
-                btn.disabled = true;
-                btn.textContent = "⏳ Очікування вибору файлу (вікно може бути позаду браузера)...";
-            }
-
-            const response = await apiMethod();
-            console.log("[AssetTable] Результат імпорту з бекенду:", response);
-
-            if (response?.success) {
-                alert(`Імпорт успішний! Завантажено рядків: ${response.rows_imported}`);
-                this.loadData();
-            } else {
-                alert(`Не вдалося завантажити файл: ${response?.error || 'Операцію скасовано користувачем'}`);
-                if (btn) {
-                    btn.disabled = false;
-                    btn.textContent = "📁 Імпортувати файл бази даних Excel";
-                }
-            }
-        } catch (error) {
-            console.error("Помилка при виклику нативного імпорту:", error);
-            alert(`Критична помилка інтерфейсу: ${error.message}`);
-            const btn = document.getElementById('btn-import-trigger');
-            if (btn) {
-                btn.disabled = false;
-                btn.textContent = "📁 Імпортувати файл бази даних Excel";
-            }
-        }
-    },
-
+    /**
+     * Рендеринг рядків таблиці майна або виведення стилізованої картки імпорту бази
+     */
     renderRowsProgressive: function () {
         const tbody = document.getElementById('table-body');
-        const overlay = document.getElementById('table-loading-overlay');
         if (!tbody) return;
 
-        if (this._renderAnimationId) {
-            cancelAnimationFrame(this._renderAnimationId);
-        }
-
-        tbody.innerHTML = '';
-
+        // Якщо файл Excel не знайдено в папці info — рендеримо інтерфейс підвантаження бази
         if (this._isFileNotFound) {
-            if (overlay) overlay.style.display = 'none';
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="10" style="text-align: center; padding: 60px 30px; background: var(--color-bg-sidebar);">
-                        <div style="max-width: 420px; margin: 0 auto; display: flex; flex-direction: column; align-items: center; gap: 16px;">
-                            <span style="font-size: 36px;">⚠️</span>
-                            <div style="font-size: 15px; font-weight: 600; color: var(--color-text-main);">Файл бази даних Excel не знайдено</div>
-                            <p style="font-size: 13px; color: var(--color-text-muted); margin: 0; line-height: 1.5;">Програма не змогла виявити файл реєстру в робочій директорії. Будь ласка, імпортуйте існуючий файл бази даних.</p>
-                            <button id="btn-import-trigger" style="margin-top: 8px; padding: 10px 20px; background: var(--color-accent, #3b82f6); color: #ffffff; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.2); transition: background 0.2s;">
-                                📁 Імпортувати файл бази даних Excel
+                    <td colspan="10" style="text-align: center; padding: 80px; color: var(--color-text-muted);">
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 16px; font-family: inherit;">
+                            <span style="font-size: 48px;">📂</span>
+                            <div style="font-size: 16px; font-weight: 600; color: var(--color-text-main);">Файл бази даних майна відсутній в каталозі info</div>
+                            <div style="font-size: 13px; max-width: 420px; margin-bottom: 10px; line-height: 20px; color: var(--color-text-muted);">
+                                Будь ласка, оберіть існуючий файл Excel у будь-якій іншій директорії вашого комп'ютера. 
+                                Система автоматично імпортує його та скопіює в папку info з повним збереженням структури.
+                            </div>
+                            <button id="btn-critical-file-import" style="padding: 12px 24px; background-color: #3b82f6; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 13px; box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.2); transition: background-color 0.2s;">
+                                📂 Обрати та імпортувати файл з ПК
                             </button>
                         </div>
                     </td>
                 </tr>
             `;
 
-            const btn = document.getElementById('btn-import-trigger');
-            if (btn) {
-                btn.onclick = () => this.triggerFileImport();
-            }
+            document.getElementById('btn-critical-file-import').addEventListener('click', async () => {
+                const res = await window.pywebview.api.import_excel_file();
+                if (res && res.success) {
+                    if (window.FilterPanel && typeof window.FilterPanel.showCustomToast === 'function') {
+                        window.FilterPanel.showCustomToast(`📂 Базу майна успішно імпортовано! Завантажено рядків: ${res.rows_imported}`, "success");
+                    }
+                    this.loadData();
+                } else if (res && res.error) {
+                    if (window.FilterPanel && typeof window.FilterPanel.showCustomToast === 'function') {
+                        window.FilterPanel.showCustomToast(`🚨 Помилка імпорту файлу: ${res.error}`, "error");
+                    }
+                }
+            });
             return;
         }
 
-        if (this._filteredData.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="10" style="text-align: center; padding: 30px; color: var(--color-text-muted);">Майно не знайдено</td></tr>`;
-            if (overlay) overlay.style.display = 'none';
+        // Обробка порожнього результату пошуку/фільтрації
+        if (this._filteredGroupedData.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 40px; color: var(--color-text-muted); font-size: 14px;">Майно за вказаними критеріями пошуку не знайдено.</td></tr>`;
             return;
         }
-
-        if (overlay) overlay.style.display = 'block';
 
         this.renderDynamicHeader();
 
-        const chunkSize = 50;
-        let currentIndex = 0;
-        const totalRows = this._filteredData.length;
-        const dataToRender = this._filteredData;
-        const self = this;
+        let htmlChunk = '';
+        this._filteredGroupedData.forEach((row, i) => {
+            // Перевіряємо, чи має товар розбиття по різних локаціях/МВО
+            const hasSplits = row._atomicRows && row._atomicRows.length > 1;
 
-        function renderChunk() {
-            const end = Math.min(currentIndex + chunkSize, totalRows);
-            let htmlChunk = '';
+            // Якщо майно розподілене, додаємо інтерактивний синій індикатор кількості суб-позицій
+            const splitIndicator = hasSplits
+                ? ` <span style="background: #3b82f6; color: white; Cantaccessattribute: unknown; font-size: 10px; padding: 2px 7px; border-radius: 10px; font-weight: bold; margin-left: 6px; display: inline-block; vertical-align: middle;">${row._atomicRows.length} розп.</span>`
+                : '';
 
-            for (let i = currentIndex; i < end; i++) {
-                const row = dataToRender[i];
-                const uuid = String(row["UUID"]);
-                const isChecked = self._selectedUuids.has(uuid) ? 'checked' : '';
-                const rowBg = self._selectedUuids.has(uuid) ? 'background-color: var(--color-accent-subtle);' : '';
+            htmlChunk += `<tr class="asset-row" data-index="${i}" style="cursor: pointer; border-bottom: 1px solid var(--color-border); transition: background-color 0.1s;">`;
+            htmlChunk += ` King: code check; <td style="padding: 12px 16px; font-size: 13px; color: var(--color-text-muted); font-weight: 500;">${i + 1}</td>`;
 
-                htmlChunk += `
-                    <tr class="asset-row" data-uuid="${uuid}" style="cursor: pointer; border-bottom: 1px solid var(--color-border); position: relative; transition: background-color 0.1s; ${rowBg}">
-                        <td class="td-checkbox" style="padding: 12px 16px;"><input type="checkbox" class="row-checkbox" value="${uuid}" ${isChecked}></td>
-                        <td style="padding: 12px 16px; font-size: 13px; color: var(--color-text-muted);">${i + 1}</td>
-                `;
+            this.DISPLAY_COLUMNS.forEach(col => {
+                let val = row[col.key] !== undefined && row[col.key] !== null && row[col.key] !== "" ? row[col.key] : '—';
 
-                self.DISPLAY_COLUMNS.forEach(col => {
-                    const valKey = col.key;
-                    const val = row[valKey] !== undefined && row[valKey] !== null && row[valKey] !== "" ? row[valKey] : '—';
+                // Якщо користувач приховав стовпець через налаштування структури, пропускаємо рендер осередку
+                if (window.FilterPanel && window.FilterPanel._hiddenColumns.has(col.key)) {
+                    return;
+                }
 
-                    const isName = valKey === 'Найменування';
-                    const isQty = valKey === 'Кількість (факт)';
-                    const isInv = valKey === 'Інв. / Номенкл. №';
+                let cellStyle = `padding: 12px 16px; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-bottom: 1px solid var(--color-border); ${col.width}`;
 
-                    let cellStyle = `padding: 12px 16px; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-bottom: 1px solid var(--color-border); ${col.width}`;
-                    if (isName) cellStyle += ' font-weight: 500; color: var(--color-text-main);';
-                    if (isQty) cellStyle += ' font-weight: 600; color: var(--color-accent);';
-                    if (isInv) cellStyle += ' font-family: monospace; letter-spacing: 0.02em;';
-
+                if (col.key === 'Найменування') {
+                    cellStyle += ' font-weight: 500; color: var(--color-text-main);';
+                    htmlChunk += `<td style="${cellStyle}" title="${val}">${val}${splitIndicator}</td>`;
+                } else {
+                    if (col.key === 'Кількість (факт)') cellStyle += ' font-weight: 600; color: var(--color-accent);';
                     htmlChunk += `<td style="${cellStyle}" title="${val}">${val}</td>`;
-                });
-
-                htmlChunk += `</tr>`;
-            }
-
-            tbody.insertAdjacentHTML('beforeend', htmlChunk);
-            currentIndex = end;
-
-            if (currentIndex < totalRows) {
-                self._renderAnimationId = requestAnimationFrame(renderChunk);
-            } else {
-                if (overlay) overlay.style.display = 'none';
-            }
-        }
-
-        this._renderAnimationId = requestAnimationFrame(renderChunk);
-    },
-
-    listenEvents: function () {
-        if (this._eventsBound) return;
-        this._eventsBound = true;
-        const self = this;
-
-        if (window.EventBus) {
-            window.EventBus.on('filters:changed', function (filters) {
-                self.applyFilters(filters);
-            });
-
-            window.EventBus.on('table:refresh-required', function () {
-                if (window.FilterPanel) window.FilterPanel.buildDynamicDirectories();
-                self.renderRowsProgressive();
-            });
-
-            window.EventBus.on('selection:toggle', function (isActive) {
-                const wrapper = document.getElementById('asset-table-wrapper');
-                if (!wrapper) return;
-
-                if (isActive) {
-                    wrapper.classList.add('selection-active');
-                } else {
-                    wrapper.classList.remove('selection-active');
-                    self._selectedUuids.clear();
-                    self.notifySelection();
-                    document.querySelectorAll('.row-checkbox').forEach(cb => cb.checked = false);
-                    const selectAll = document.getElementById('selectAll');
-                    if (selectAll) selectAll.checked = false;
-                    document.querySelectorAll('.asset-row').forEach(row => row.style.backgroundColor = '');
                 }
             });
-        }
-    },
-
-    bindTableDelegation: function () {
-        const tbody = document.getElementById('table-body');
-        const self = this;
-
-        tbody.addEventListener('click', function (e) {
-            if (e.target.closest('#btn-import-trigger')) return;
-
-            const tr = e.target.closest('.asset-row');
-            if (!tr) return;
-
-            const uuid = String(tr.dataset.uuid);
-
-            if (e.target.closest('.td-checkbox') || e.target.classList.contains('row-checkbox')) {
-                const checkbox = tr.querySelector('.row-checkbox');
-                if (!checkbox) return;
-
-                if (!e.target.classList.contains('row-checkbox')) {
-                    checkbox.checked = !checkbox.checked;
-                }
-
-                if (checkbox.checked) {
-                    self._selectedUuids.add(uuid);
-                    tr.style.backgroundColor = 'var(--color-accent-subtle)';
-                } else {
-                    self._selectedUuids.delete(uuid);
-                    tr.style.backgroundColor = '';
-                }
-                self.notifySelection();
-                return;
-            }
-
-            if (window.FilterPanel && window.FilterPanel._selectionMode) {
-                const checkbox = tr.querySelector('.row-checkbox');
-                if (checkbox) {
-                    checkbox.checked = !checkbox.checked;
-                    checkbox.dispatchEvent(new Event('change', { bubbles: true }));
-                }
-                return;
-            }
-
-            const match = self._data.find(a => String(a["UUID"]) === uuid);
-
-            if (match) {
-                console.log("[AssetTable] Відкриваємо картку:", match);
-                if (window.GroupedModal) {
-                    window.GroupedModal.open(match);
-                } else {
-                    console.error("[AssetTable] Помилка: GroupedModal не знайдено!");
-                }
-            }
+            htmlChunk += `</tr>`;
         });
 
-        tbody.addEventListener('change', function (e) {
-            if (e.target.classList.contains('row-checkbox')) {
-                const tr = e.target.closest('.asset-row');
-                const uuid = String(tr.dataset.uuid);
-                if (e.target.checked) {
-                    self._selectedUuids.add(uuid);
-                    tr.style.backgroundColor = 'var(--color-accent-subtle)';
-                } else {
-                    self._selectedUuids.delete(uuid);
-                    tr.style.backgroundColor = '';
-                }
-                self.notifySelection();
-            }
-        });
+        tbody.innerHTML = htmlChunk;
     },
 
+    /**
+     * Скрізна фільтрація та динамічна агрегація плоских даних на основі домінантного об'єкта
+     */
     applyFilters: function (filters) {
         if (this._isFileNotFound) return;
 
-        this._selectedUuids.clear();
-        this.notifySelection();
-
-        const selectAll = document.getElementById('selectAll');
-        if (selectAll) selectAll.checked = false;
-
         const q = (filters.searchQuery || '').toLowerCase();
 
+        // Етап 1: Первинне точне відсікання на рівні АТОМАРНИХ рядків Excel
         this._filteredData = this._data.filter(row => {
             const matchSearch = q === '' || Object.keys(row).some(key =>
                 key !== 'UUID' && row[key] && String(row[key]).toLowerCase().includes(q)
             );
-            const matchType = filters.type === 'all' || row["Тип"] === filters.type;
+
+            const matchType = filters.type === 'all' || row["Тип майна"] === filters.type || row["Тип"] === filters.type;
             const matchMvo = filters.mvo === 'all' || row["МВО (Прізвище)"] === filters.mvo;
 
             let matchObject = false;
@@ -416,15 +225,95 @@ const AssetTable = {
             return matchSearch && matchType && matchMvo && matchObject;
         });
 
-        if (window.EventBus) window.EventBus.emit('filters:count-updated', this._filteredData.length);
+        // Етап 2: Динамічне угруповання відфільтрованих позицій за назвою 'Найменування'
+        const groups = {};
+        this._filteredData.forEach(row => {
+            const name = row["Найменування"] || "—";
+            if (!groups[name]) groups[name] = [];
+            groups[name].push(row);
+        });
+
+        // Етап 3: Інтелектуальний розрахунок параметрів згрупованого рядка (Домінантний об'єкт)
+        this._filteredGroupedData = Object.keys(groups).map(name => {
+            const rows = groups[name];
+
+            // Розрахунок сумарної кількості одиниць майна
+            const totalQty = rows.reduce((sum, r) => sum + (parseFloat(r["Кількість (факт)"]) || 0), 0);
+
+            // КРИТИЧНИЙ АЛГОРИТМ: Пошук об'єкта, на якому зафіксовано найбільшу кількість одиниць майна
+            const objQuantities = {};
+            rows.forEach(r => {
+                const obj = r["Об'єкт"] || "—";
+                const qty = parseFloat(r["Кількість (факт)"]) || 0;
+                objQuantities[obj] = (objQuantities[obj] || 0) + qty;
+            });
+
+            let dominantObject = "—";
+            let maxObjQty = -1;
+            Object.keys(objQuantities).forEach(obj => {
+                if (objQuantities[obj] > maxObjQty) {
+                    maxObjQty = objQuantities[obj];
+                    dominantObject = obj;
+                }
+            });
+
+            // Формування інформаційного маркера МВО
+            const distinctMvos = [...new Set(rows.map(r => r["МВО (Прізвище)"]).filter(Boolean))];
+            const mvoDisplay = distinctMvos.length === 1 ? distinctMvos[0] : (distinctMvos.length > 1 ? `👥 Декілька МВО (${distinctMvos.length})` : "—");
+
+            // Формування інформаційного маркера Інвентарних номерів
+            const distinctInvs = [...new Set(rows.map(r => r["Інв. / Номенкл. №"]).filter(Boolean))];
+            const invDisplay = distinctInvs.length === 1 ? distinctInvs[0] : (distinctInvs.length > 1 ? "📋 Різні номери" : "—");
+
+            return {
+                ...rows[0],
+                "Найменування": name,
+                "Кількість (факт)": totalQty,
+                "Об'єкт": dominantObject,
+                "МВО (Прізвище)": mvoDisplay,
+                "Інв. / Номенкл. №": invDisplay,
+                "_atomicRows": rows // Зберігаємо посилання на масив для SubPositionsModal розбиття
+            };
+        });
+
+        // Надсилаємо актуальну кількість згрупованих карток у шину подій для лічильника
+        if (window.EventBus) {
+            window.EventBus.emit('filters:count-updated', this._filteredGroupedData.length);
+        }
+
         this.renderRowsProgressive();
     },
 
-    notifySelection: function () {
-        const uuids = Array.from(this._selectedUuids);
-        if (window.EventBus) {
-            window.EventBus.emit('assets:selected', { uuids: uuids, count: uuids.length });
-        }
+    /**
+     * Обробка кліків: Якщо позиція одна — запускається EditModal, якщо декілька — проміжне вікно розподілу
+     */
+    bindTableDelegation: function () {
+        const tbody = document.getElementById('table-body');
+        if (!tbody) return;
+
+        tbody.addEventListener('click', (e) => {
+            if (this._isFileNotFound) return;
+
+            const tr = e.target.closest('.asset-row');
+            if (!tr) return;
+
+            const idx = parseInt(tr.dataset.index);
+            const groupedItem = this._filteredGroupedData[idx];
+            if (!groupedItem) return;
+
+            const atomicRows = groupedItem._atomicRows || [];
+
+            // Розумна диспетчеризація:
+            if (atomicRows.length <= 1) {
+                // Одна атомарна позиція — відкриваємо її відразу у класичному EditModal
+                if (window.EditModal) window.EditModal.open(atomicRows[0] || groupedItem);
+            } else {
+                // Позиція розбита по різних об'єктах/МВО — викликаємо картки розподілу
+                if (window.SubPositionsModal) {
+                    window.SubPositionsModal.open(groupedItem["Найменування"], atomicRows);
+                }
+            }
+        });
     }
 };
 
