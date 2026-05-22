@@ -48,7 +48,7 @@ const GroupedModal = {
         const data = this.currentAsset;
 
         // Нормалізація значень, які можуть мати різні назви колонок в Excel
-        const invNumber = data["Інвентарний / Номенклатурний №"] || data["Інв. / Номенкл. №"] || data["Інвентарний номер"] || '';
+        const invNumber = data["Інв. / Номенкл. №"] || data["Інв. / Номенкл. №"] || data["Інвентарний номер"] || '';
         const qty = data["Кількість (факт)"] || data["Загальна кількість"] || data["Кількість"] || '0';
 
         // Збір масиву наявних даних з таблиці для динамічного формування випадаючих списків
@@ -75,7 +75,7 @@ const GroupedModal = {
                     <form id="grouped-modal-form" style="display: flex; flex-direction: column; gap: 16px;">
                         ${this._createInput('Найменування', data["Найменування"])}
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-                            ${this._createInput('Інвентарний / Номенклатурний №', invNumber)}
+                            ${this._createInput('Інв. / Номенкл. №', invNumber)}
                             ${this._createInput('Кількість (факт)', qty, 'number')}
                         </div>
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
@@ -185,7 +185,7 @@ const GroupedModal = {
 
         // Забезпечуємо сумісність ключів для бекенду pandas
         payload["Тип"] = payload["Тип майна"];
-        payload["Інв. / Номенкл. №"] = payload["Інвентарний / Номенклатурний №"];
+        payload["Інв. / Номенкл. №"] = payload["Інв. / Номенкл. №"];
 
         // Пошук доступного API-мосту
         const api = window.ApiBridge || window.pywebview?.api || window.Api;

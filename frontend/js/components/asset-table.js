@@ -2,6 +2,7 @@
  * F.Int — Компонент головної таблиці майна (Asset Table Component)
  * Реалізує повноекранне відображення, сувору автентичну фільтрацію,
  * розрахунок домінантних локацій та інтелектуальну диспетчеризацію підпозицій.
+ * ПОВНІСТЮ ОЧИЩЕНО ВІД СМІТТЄВОГО ТЕКСТУ В ЦИКЛІ РЕНДЕРУ КОМІРОК.
  */
 
 const AssetTable = {
@@ -14,8 +15,7 @@ const AssetTable = {
     // Прапорець аварійного стану відсутності файлу бази в каталозі info
     _isFileNotFound: false,
 
-    // СУВОРЕ КРИТИЧНЕ ВИПРАВЛЕННЯ: Масив колонок жорстко зафіксовано.
-    // Жодні зовнішні чи додані поля не зможуть порушити геометрію головного списку.
+    // Масив колонок жорстко зафіксовано для забезпечення незмінності SPA Grid
     DISPLAY_COLUMNS: [
         { key: "Найменування", width: "max-width: 280px;" },
         { key: "Інв. / Номенкл. №", width: "max-width: 140px;" },
@@ -64,7 +64,6 @@ const AssetTable = {
         try {
             const data = await window.ApiBridge.getAssets();
 
-            // Перевірка наявності тригера відсутності файлу
             if (data && data.length === 1 && data[0]["__SYSTEM_STATUS__"] === "FILE_NOT_FOUND") {
                 this._isFileNotFound = true;
                 this._data = [];
@@ -75,14 +74,12 @@ const AssetTable = {
 
             this._filteredData = this._data;
 
-            // Синхронізуємо довідники панелі фільтрації та пулу глобального автокомпліту
             if (!this._isFileNotFound && window.FilterPanel && typeof window.FilterPanel.buildDynamicDirectories === 'function') {
                 window.FilterPanel.buildDynamicDirectories();
             } else {
                 this.renderRowsProgressive();
             }
 
-            // Оновлюємо відображення відповідно до встановлених селектів пошуку
             if (window.FilterPanel && window.FilterPanel._filters) {
                 this.applyFilters(window.FilterPanel._filters);
             }
@@ -115,7 +112,6 @@ const AssetTable = {
         const tbody = document.getElementById('table-body');
         if (!tbody) return;
 
-        // Якщо файл Excel не знайдено в папці info — рендеримо інтерфейс підвантаження бази
         if (this._isFileNotFound) {
             tbody.innerHTML = `
                 <tr>
@@ -151,7 +147,6 @@ const AssetTable = {
             return;
         }
 
-        // Обробка порожнього результату пошуку/фільтрації
         if (this._filteredGroupedData.length === 0) {
             tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 40px; color: var(--color-text-muted); font-size: 14px;">Майно за вказаними критеріями пошуку не знайдено.</td></tr>`;
             return;
@@ -161,21 +156,20 @@ const AssetTable = {
 
         let htmlChunk = '';
         this._filteredGroupedData.forEach((row, i) => {
-            // Перевіряємо, чи має товар розбиття по різних локаціях/МВО
             const hasSplits = row._atomicRows && row._atomicRows.length > 1;
 
-            // Якщо майно розподілене, додаємо інтерактивний синій індикатор кількості суб-позицій
+            // Індикатор розподілу позицій
             const splitIndicator = hasSplits
-                ? ` <span style="background: #3b82f6; color: white; Cantaccessattribute: unknown; font-size: 10px; padding: 2px 7px; border-radius: 10px; font-weight: bold; margin-left: 6px; display: inline-block; vertical-align: middle;">${row._atomicRows.length} розп.</span>`
+                ? ` <span style="background: #3b82f6; color: white; font-size: 10px; padding: 2px 7px; border-radius: 10px; font-weight: bold; margin-left: 6px; display: inline-block; vertical-align: middle;">${row._atomicRows.length} розп.</span>`
                 : '';
 
+            // ВИПРАВЛЕНО: Повністю видалено сторонній текст з тегів рядка та осередку нумерації
             htmlChunk += `<tr class="asset-row" data-index="${i}" style="cursor: pointer; border-bottom: 1px solid var(--color-border); transition: background-color 0.1s;">`;
-            htmlChunk += ` King: code check; <td style="padding: 12px 16px; font-size: 13px; color: var(--color-text-muted); font-weight: 500;">${i + 1}</td>`;
+            htmlChunk += `<td style="padding: 12px 16px; font-size: 13px; color: var(--color-text-muted); font-weight: 500;">${i + 1}</td>`;
 
             this.DISPLAY_COLUMNS.forEach(col => {
                 let val = row[col.key] !== undefined && row[col.key] !== null && row[col.key] !== "" ? row[col.key] : '—';
 
-                // Якщо користувач приховав стовпець через налаштування структури, пропускаємо рендер осередку
                 if (window.FilterPanel && window.FilterPanel._hiddenColumns.has(col.key)) {
                     return;
                 }
@@ -204,7 +198,6 @@ const AssetTable = {
 
         const q = (filters.searchQuery || '').toLowerCase();
 
-        // Етап 1: Первинне точне відсікання на рівні АТОМАРНИХ рядків Excel
         this._filteredData = this._data.filter(row => {
             const matchSearch = q === '' || Object.keys(row).some(key =>
                 key !== 'UUID' && row[key] && String(row[key]).toLowerCase().includes(q)
@@ -225,7 +218,6 @@ const AssetTable = {
             return matchSearch && matchType && matchMvo && matchObject;
         });
 
-        // Етап 2: Динамічне угруповання відфільтрованих позицій за назвою 'Найменування'
         const groups = {};
         this._filteredData.forEach(row => {
             const name = row["Найменування"] || "—";
@@ -233,14 +225,10 @@ const AssetTable = {
             groups[name].push(row);
         });
 
-        // Етап 3: Інтелектуальний розрахунок параметрів згрупованого рядка (Домінантний об'єкт)
         this._filteredGroupedData = Object.keys(groups).map(name => {
             const rows = groups[name];
-
-            // Розрахунок сумарної кількості одиниць майна
             const totalQty = rows.reduce((sum, r) => sum + (parseFloat(r["Кількість (факт)"]) || 0), 0);
 
-            // КРИТИЧНИЙ АЛГОРИТМ: Пошук об'єкта, на якому зафіксовано найбільшу кількість одиниць майна
             const objQuantities = {};
             rows.forEach(r => {
                 const obj = r["Об'єкт"] || "—";
@@ -257,11 +245,9 @@ const AssetTable = {
                 }
             });
 
-            // Формування інформаційного маркера МВО
             const distinctMvos = [...new Set(rows.map(r => r["МВО (Прізвище)"]).filter(Boolean))];
             const mvoDisplay = distinctMvos.length === 1 ? distinctMvos[0] : (distinctMvos.length > 1 ? `👥 Декілька МВО (${distinctMvos.length})` : "—");
 
-            // Формування інформаційного маркера Інвентарних номерів
             const distinctInvs = [...new Set(rows.map(r => r["Інв. / Номенкл. №"]).filter(Boolean))];
             const invDisplay = distinctInvs.length === 1 ? distinctInvs[0] : (distinctInvs.length > 1 ? "📋 Різні номери" : "—");
 
@@ -272,11 +258,10 @@ const AssetTable = {
                 "Об'єкт": dominantObject,
                 "МВО (Прізвище)": mvoDisplay,
                 "Інв. / Номенкл. №": invDisplay,
-                "_atomicRows": rows // Зберігаємо посилання на масив для SubPositionsModal розбиття
+                "_atomicRows": rows
             };
         });
 
-        // Надсилаємо актуальну кількість згрупованих карток у шину подій для лічильника
         if (window.EventBus) {
             window.EventBus.emit('filters:count-updated', this._filteredGroupedData.length);
         }
@@ -303,12 +288,9 @@ const AssetTable = {
 
             const atomicRows = groupedItem._atomicRows || [];
 
-            // Розумна диспетчеризація:
             if (atomicRows.length <= 1) {
-                // Одна атомарна позиція — відкриваємо її відразу у класичному EditModal
                 if (window.EditModal) window.EditModal.open(atomicRows[0] || groupedItem);
             } else {
-                // Позиція розбита по різних об'єктах/МВО — викликаємо картки розподілу
                 if (window.SubPositionsModal) {
                     window.SubPositionsModal.open(groupedItem["Найменування"], atomicRows);
                 }

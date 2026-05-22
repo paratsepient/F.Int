@@ -217,6 +217,12 @@ class DataManager:
         if "Тип" in payload:
             payload["Тип майна"] = payload["Тип"]
 
+        # ЛОГІКА ДУБЛЮВАННЯ: якщо прийшло загальне поле "Кількість", розносимо його в обидва стовпці Excel
+        if "Кількість" in payload:
+            val = float(payload["Кількість"]) if payload["Кількість"] else 0.0
+            payload["Кількість (факт)"] = val
+            payload["Кількість (загальна)"] = val
+
         for col in self._df.columns:
             if col == "UUID" or col == "Тип":
                 continue
@@ -258,6 +264,12 @@ class DataManager:
         row_idx = idx[0]
         if "Тип" in payload:
             payload["Тип майна"] = payload["Тип"]
+
+        # ЛОГІКА ДУБЛЮВАННЯ ПРИ РЕДАГУВАННІ: якщо прийшло загальне поле "Кількість", розносимо його в обидва стовпці Excel
+        if "Кількість" in payload:
+            val = float(payload["Кількість"]) if payload["Кількість"] else 0.0
+            payload["Кількість (факт)"] = val
+            payload["Кількість (загальна)"] = val
 
         for key, value in payload.items():
             if key in ["UUID", "Об'єкт_список", "Тип"]:
