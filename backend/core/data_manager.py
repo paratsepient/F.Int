@@ -28,11 +28,11 @@ def split_complex_object(obj_text: str) -> List[str]:
         part = part.strip()
         if not part:
             continue
-        match = re.search(r"^(.*?)\s*\(([^)]+)\)", part)
+        match = re.search(r"^(.*?)\\s*\\(([^)]+)\\)", part)
         if match:
             base_name = match.group(1).strip()
             inside_brackets = match.group(2)
-            floors = re.findall(r"\d+", inside_brackets)
+            floors = re.findall(r"\\d+", inside_brackets)
             if floors:
                 for floor in floors:
                     final_list.append(f"{base_name} {floor} поверх")
@@ -119,13 +119,41 @@ class DataManager:
             header_fill = PatternFill(
                 start_color="FF3B82F6", end_color="FF3B82F6", fill_type="solid"
             )
-            alignment = Alignment(vertical="center", wrap_text=False)
+
+            # ВИПРАВЛЕНО: Сет стовпців для вирівнювання по правому краю
+            right_align_cols = {
+                "A",
+                "G",
+                "H",
+                "L",
+                "M",
+                "P",
+                "Q",
+                "S",
+                "U",
+                "V",
+                "W",
+                "X",
+            }
+            align_left = Alignment(
+                horizontal="left", vertical="center", wrap_text=False
+            )
+            align_right = Alignment(
+                horizontal="right", vertical="center", wrap_text=False
+            )
 
             for row_idx, row in enumerate(ws.iter_rows(), start=1):
                 ws.row_dimensions[row_idx].height = 20
                 for cell in row:
                     c = cast(Cell, cell)
-                    c.alignment = alignment
+
+                    # Динамічно визначаємо літеру стовпця (A, B, C...) для кожної клітинки
+                    col_letter = get_column_letter(c.column)
+                    if col_letter in right_align_cols:
+                        c.alignment = align_right
+                    else:
+                        c.alignment = align_left
+
                     if row_idx == 1:
                         c.font = header_font
                         c.fill = header_fill
@@ -144,6 +172,7 @@ class DataManager:
 
             if ws.dimensions:
                 ws.auto_filter.ref = ws.dimensions
+            ws.freeze_panes = "A2"
             wb.save(temp_excel)
             wb.close()
             os.replace(temp_excel, self.db_path)
@@ -217,7 +246,6 @@ class DataManager:
         if "Тип" in payload:
             payload["Тип майна"] = payload["Тип"]
 
-        # ЛОГІКА ДУБЛЮВАННЯ: якщо прийшло загальне поле "Кількість", розносимо його в обидва стовпці Excel
         if "Кількість" in payload:
             val = float(payload["Кількість"]) if payload["Кількість"] else 0.0
             payload["Кількість (факт)"] = val
@@ -241,7 +269,6 @@ class DataManager:
 
         self._df = pd.concat([self._df, pd.DataFrame([new_row])], ignore_index=True)
 
-        # ВИПРАВЛЕНО: Алфавітне сортування всього реєстру за колонкою 'Тип майна'
         try:
             if "Тип майна" in self._df.columns:
                 self._df = self._df.sort_values(
@@ -265,7 +292,6 @@ class DataManager:
         if "Тип" in payload:
             payload["Тип майна"] = payload["Тип"]
 
-        # ЛОГІКА ДУБЛЮВАННЯ ПРИ РЕДАГУВАННІ: якщо прийшло загальне поле "Кількість", розносимо його в обидва стовпці Excel
         if "Кількість" in payload:
             val = float(payload["Кількість"]) if payload["Кількість"] else 0.0
             payload["Кількість (факт)"] = val

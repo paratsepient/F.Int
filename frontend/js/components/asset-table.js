@@ -1,44 +1,32 @@
 /**
- * F.Int — Компонент головної таблиці майна (Asset Table Component)
- * Реалізує повноекранне відображення, сувору автентичну фільтрацію,
- * розрахунок домінантних локацій та інтелектуальну диспетчеризацію підпозицій.
- * ПОВНІСТЮ ОЧИЩЕНО ВІД СМІТТЄВОГО ТЕКСТУ В ЦИКЛІ РЕНДЕРУ КОМІРОК.
+ * F.Int — Компонент головної таблиці майна
+ * Оновлено: Алерт згрупованих позицій винесено в окремий стовпець "Згр.".
  */
 
 const AssetTable = {
-    // Вхідний масив плоских (атомарних) рядків з унікальними UUID, отриманий з Excel
     _data: [],
-    // Масив рядків, які пройшли поточні системні фільтри
     _filteredData: [],
-    // Кінцевий агрегований масив, що виводиться безпосередньо на екран користувача
     _filteredGroupedData: [],
-    // Прапорець аварійного стану відсутності файлу бази в каталозі info
     _isFileNotFound: false,
 
-    // Масив колонок жорстко зафіксовано для забезпечення незмінності SPA Grid
+    // ОНОВЛЕНА СТРУКТУРА: Додано стовпець "Згр." (Згруповано) в самий кінець
     DISPLAY_COLUMNS: [
-        { key: "Найменування", width: "max-width: 280px;" },
-        { key: "Інв. / Номенкл. №", width: "max-width: 140px;" },
-        { key: "Тип майна", width: "max-width: 150px;" },
-        { key: "Одиниця виміру", width: "max-width: 90px;" },
-        { key: "Кількість (факт)", width: "max-width: 90px;" },
-        { key: "МВО (Прізвище)", width: "max-width: 160px;" },
-        { key: "Об'єкт", width: "max-width: 180px;" }
+        { key: "Найменування", width: "width: 420px; min-width: 320px;" },
+        { key: "Інв. / Номенкл. №", width: "width: 110px;" },
+        { key: "Тип майна", width: "width: 120px;" },
+        { key: "Одиниця виміру", width: "width: 60px; text-align: center;" },
+        { key: "Кількість (факт)", width: "width: 80px; text-align: center;" },
+        { key: "МВО (Прізвище)", width: "width: 140px;" },
+        { key: "Об'єкт", width: "width: 220px;" },
+        { key: "Згр.", width: "width: 50px; text-align: center;" }
     ],
 
-    /**
-     * Первинний запуск та монтування вузлів компонента таблиці
-     */
     init: function () {
-        console.log("[AssetTable] Запуск системи генерації головного списку ТМЦ...");
         this.renderStructure();
         this.bindTableDelegation();
         this.loadData();
     },
 
-    /**
-     * Рендеринг базової HTML-оболонки таблиці з фіксованим липким заголовком (Sticky Header)
-     */
     renderStructure: function () {
         const placeholder = document.getElementById('asset-table-placeholder');
         if (!placeholder) return;
@@ -57,9 +45,6 @@ const AssetTable = {
         `;
     },
 
-    /**
-     * Асинхронне завантаження плоского реєстру активів через міст API
-     */
     loadData: async function () {
         try {
             const data = await window.ApiBridge.getAssets();
@@ -67,47 +52,44 @@ const AssetTable = {
             if (data && data.length === 1 && data[0]["__SYSTEM_STATUS__"] === "FILE_NOT_FOUND") {
                 this._isFileNotFound = true;
                 this._data = [];
-            } else {
-                this._isFileNotFound = false;
-                this._data = data || [];
+                this.renderDynamicHeader(); // щоб таблиця мала структуру
+                this.renderRowsProgressive(); // ← одразу показуємо кнопку імпорту
+                return; // ← виходимо, не йдемо в applyFilters
             }
 
+            this._isFileNotFound = false;
+            this._data = data || [];
             this._filteredData = this._data;
 
-            if (!this._isFileNotFound && window.FilterPanel && typeof window.FilterPanel.buildDynamicDirectories === 'function') {
+            if (window.FilterPanel && typeof window.FilterPanel.buildDynamicDirectories === 'function') {
                 window.FilterPanel.buildDynamicDirectories();
-            } else {
-                this.renderRowsProgressive();
             }
 
-            if (window.FilterPanel && window.FilterPanel._filters) {
-                this.applyFilters(window.FilterPanel._filters);
-            }
+            const activeFilters = (window.FilterPanel && window.FilterPanel._filters)
+                ? window.FilterPanel._filters
+                : { searchQuery: '', type: 'all', mvo: 'all', object: 'all' };
+
+            this.applyFilters(activeFilters);
 
         } catch (err) {
             console.error("[AssetTable] Помилка завантаження плоских даних:", err);
         }
     },
 
-    /**
-     * Генерація заголовків стовпців. Першим завжди йде статичний маркер №
-     */
     renderDynamicHeader: function () {
         const theadRow = document.getElementById('table-header-row');
         if (!theadRow) return;
 
-        let headerHtml = `<th style="padding: 12px 16px; width: 45px; font-size: 12px; color: var(--color-text-muted); border-bottom: 1px solid var(--color-border); font-weight: 700;">№</th>`;
+        let headerHtml = `<th style="padding: 12px 16px; width: 45px; font-size: 12px; color: var(--color-text-muted); border-bottom: 1px solid var(--color-border); font-weight: 700; text-align: center;">№</th>`;
 
         this.DISPLAY_COLUMNS.forEach(col => {
-            headerHtml += `<th style="padding: 12px 16px; font-size: 12px; color: var(--color-text-muted); border-bottom: 1px solid var(--color-border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 700; ${col.width}">${col.key}</th>`;
+            let textAlign = col.width.includes("text-align: center;") ? "text-align: center;" : "text-align: left;";
+            headerHtml += `<th style="padding: 12px 16px; font-size: 12px; color: var(--color-text-muted); border-bottom: 1px solid var(--color-border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 700; ${col.width} ${textAlign}">${col.key}</th>`;
         });
 
         theadRow.innerHTML = headerHtml;
     },
 
-    /**
-     * Рендеринг рядків таблиці майна або виведення стилізованої картки імпорту бази
-     */
     renderRowsProgressive: function () {
         const tbody = document.getElementById('table-body');
         if (!tbody) return;
@@ -158,14 +140,12 @@ const AssetTable = {
         this._filteredGroupedData.forEach((row, i) => {
             const hasSplits = row._atomicRows && row._atomicRows.length > 1;
 
-            // Індикатор розподілу позицій
             const splitIndicator = hasSplits
-                ? ` <span style="background: #3b82f6; color: white; font-size: 10px; padding: 2px 7px; border-radius: 10px; font-weight: bold; margin-left: 6px; display: inline-block; vertical-align: middle;">${row._atomicRows.length} розп.</span>`
+                ? `<span style="background: var(--color-accent, #3b82f6); color: white; font-size: 11px; min-width: 22px; height: 22px; padding: 0 6px; display: inline-flex; justify-content: center; align-items: center; border-radius: 6px; font-weight: 700; box-shadow: 0 2px 4px rgba(59, 130, 246, 0.15);" title="Згруповано записів у файлі: ${row._atomicRows.length}">${row._atomicRows.length}</span>`
                 : '';
 
-            // ВИПРАВЛЕНО: Повністю видалено сторонній текст з тегів рядка та осередку нумерації
             htmlChunk += `<tr class="asset-row" data-index="${i}" style="cursor: pointer; border-bottom: 1px solid var(--color-border); transition: background-color 0.1s;">`;
-            htmlChunk += `<td style="padding: 12px 16px; font-size: 13px; color: var(--color-text-muted); font-weight: 500;">${i + 1}</td>`;
+            htmlChunk += `<td style="padding: 12px 16px; font-size: 13px; color: var(--color-text-muted); font-weight: 500; text-align: center;">${i + 1}</td>`;
 
             this.DISPLAY_COLUMNS.forEach(col => {
                 let val = row[col.key] !== undefined && row[col.key] !== null && row[col.key] !== "" ? row[col.key] : '—';
@@ -178,9 +158,20 @@ const AssetTable = {
 
                 if (col.key === 'Найменування') {
                     cellStyle += ' font-weight: 500; color: var(--color-text-main);';
-                    htmlChunk += `<td style="${cellStyle}" title="${val}">${val}${splitIndicator}</td>`;
-                } else {
-                    if (col.key === 'Кількість (факт)') cellStyle += ' font-weight: 600; color: var(--color-accent);';
+                    htmlChunk += `<td style="${cellStyle}" title="${val}">${val}</td>`;
+                }
+                else if (col.key === 'Одиниця виміру') {
+                    htmlChunk += `<td style="${cellStyle} text-align: center;" title="${val}">${val}</td>`;
+                }
+                else if (col.key === 'Кількість (факт)') {
+                    cellStyle += ' font-weight: 600; color: var(--color-accent); text-align: center;';
+                    htmlChunk += `<td style="${cellStyle}" title="${val}">${val}</td>`;
+                }
+                // НОВЕ: Рендер індикатора у новому стовпці
+                else if (col.key === "Згр.") {
+                    htmlChunk += `<td style="${cellStyle} text-align: center; vertical-align: middle;">${splitIndicator}</td>`;
+                }
+                else {
                     htmlChunk += `<td style="${cellStyle}" title="${val}">${val}</td>`;
                 }
             });
@@ -190,9 +181,6 @@ const AssetTable = {
         tbody.innerHTML = htmlChunk;
     },
 
-    /**
-     * Скрізна фільтрація та динамічна агрегація плоских даних на основі домінантного об'єкта
-     */
     applyFilters: function (filters) {
         if (this._isFileNotFound) return;
 
@@ -204,7 +192,9 @@ const AssetTable = {
             );
 
             const matchType = filters.type === 'all' || row["Тип майна"] === filters.type || row["Тип"] === filters.type;
-            const matchMvo = filters.mvo === 'all' || row["МВО (Прізвище)"] === filters.mvo;
+
+            const mvoKey = Object.keys(row).find(k => k.toLowerCase().includes('мво')) || "МВО (Прізвище)";
+            const matchMvo = filters.mvo === 'all' || row[mvoKey] === filters.mvo;
 
             let matchObject = false;
             if (filters.object === 'all') {
@@ -220,7 +210,7 @@ const AssetTable = {
 
         const groups = {};
         this._filteredData.forEach(row => {
-            const name = row["Найменування"] || "—";
+            const name = row["Найменування"] ? String(row["Найменування"]).trim() : "—";
             if (!groups[name]) groups[name] = [];
             groups[name].push(row);
         });
@@ -245,11 +235,15 @@ const AssetTable = {
                 }
             });
 
-            const distinctMvos = [...new Set(rows.map(r => r["МВО (Прізвище)"]).filter(Boolean))];
-            const mvoDisplay = distinctMvos.length === 1 ? distinctMvos[0] : (distinctMvos.length > 1 ? `👥 Декілька МВО (${distinctMvos.length})` : "—");
+            const mvoKey = Object.keys(rows[0]).find(k => k.toLowerCase().includes('мво')) || "МВО (Прізвище)";
+            const distinctMvos = [...new Set(rows.map(r => r[mvoKey]).filter(Boolean))];
+            const mvoDisplay = distinctMvos.length === 1 ? distinctMvos[0] : (distinctMvos.length > 1 ? "Різні" : "—");
 
-            const distinctInvs = [...new Set(rows.map(r => r["Інв. / Номенкл. №"]).filter(Boolean))];
-            const invDisplay = distinctInvs.length === 1 ? distinctInvs[0] : (distinctInvs.length > 1 ? "📋 Різні номери" : "—");
+            const distinctInvs = [...new Set(rows.map(r => {
+                const invK = Object.keys(r).find(key => key.toLowerCase().includes('інв') || key.toLowerCase().includes('номенкл'));
+                return invK ? r[invK] : null;
+            }).filter(Boolean))];
+            const invDisplay = distinctInvs.length === 1 ? distinctInvs[0] : (distinctInvs.length > 1 ? "Різні" : "—");
 
             return {
                 ...rows[0],
@@ -269,9 +263,6 @@ const AssetTable = {
         this.renderRowsProgressive();
     },
 
-    /**
-     * Обробка кліків: Якщо позиція одна — запускається EditModal, якщо декілька — проміжне вікно розподілу
-     */
     bindTableDelegation: function () {
         const tbody = document.getElementById('table-body');
         if (!tbody) return;
